@@ -60,7 +60,34 @@ def emit(args):
         print(json.dumps({"event": event, "path": str(path)}, separators=(",", ":")))
 
 
+def section(argv):
+    """Print a GitLab-compatible log section marker so Slurm-web folds the output.
+
+    slurm-check section start NAME [TITLE] [--collapsed]
+    slurm-check section end NAME
+    """
+    parser = argparse.ArgumentParser(prog="slurm-check section")
+    parser.add_argument("action", choices=("start", "end"))
+    parser.add_argument("name")
+    parser.add_argument("title", nargs="?")
+    parser.add_argument("--collapsed", action="store_true")
+    args = parser.parse_args(argv)
+    if not all(ch.isalnum() or ch in "._-" for ch in args.name):
+        raise SystemExit("section name may only contain letters, digits, . _ -")
+    stamp = int(time.time())
+    if args.action == "start":
+        options = "[collapsed=true]" if args.collapsed else ""
+        title = args.title or args.name.replace("-", " ").replace("_", " ").title()
+        sys.stdout.write(f"\x1b[0Ksection_start:{stamp}:{args.name}{options}\r\x1b[0K{title}\n")
+    else:
+        sys.stdout.write(f"\x1b[0Ksection_end:{stamp}:{args.name}\r\x1b[0K")
+    sys.stdout.flush()
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "section":
+        section(sys.argv[2:])
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("state", choices=STATES)
     parser.add_argument("check_id")

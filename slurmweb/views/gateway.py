@@ -273,7 +273,8 @@ def job(cluster: str, job: int):
 @check_jwt
 @validate_cluster
 def job_log(cluster: str, job: int):
-    return proxy_agent(cluster, f"job/{job}/log", request.token)
+    raw = request.args.get("raw") in ("1", "true")
+    return proxy_agent(cluster, f"job/{job}/log", request.token, json=not raw)
 
 
 @check_jwt
@@ -286,6 +287,12 @@ def job_gpus(cluster: str, job: int):
 @validate_cluster
 def job_checks(cluster: str, job: int):
     return proxy_agent(cluster, f"job/{job}/checks", request.token)
+
+
+@check_jwt
+@validate_cluster
+def job_diagnostics(cluster: str, job: int):
+    return proxy_agent(cluster, f"job/{job}/diagnostics", request.token)
 
 
 @check_jwt

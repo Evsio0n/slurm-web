@@ -46,6 +46,7 @@ import type {
 } from '@/composables/gateway/slurm/types'
 import type {
   JobChecksSnapshot,
+  JobDiagnostics,
   JobGpuTelemetry,
   JobLogChunk
 } from '@/composables/gateway/types/engineer'
@@ -199,6 +200,14 @@ export function useGatewayAPI() {
     return await restAPI.get<JobChecksSnapshot>(`/agents/${cluster}/job/${jobId}/checks`)
   }
 
+  async function jobDiagnostics(cluster: string, jobId: number): Promise<JobDiagnostics | null> {
+    return await restAPI.get<JobDiagnostics | null>(`/agents/${cluster}/job/${jobId}/diagnostics`)
+  }
+
+  async function jobLogRaw(cluster: string, jobId: number, stream: 'stdout' | 'stderr'): Promise<Blob> {
+    return await restAPI.get<Blob>(`/agents/${cluster}/job/${jobId}/log?stream=${stream}&raw=1`, true, 'blob')
+  }
+
   async function nodes(cluster: string): Promise<SlurmNode[]> {
     return await restAPI.get<SlurmNode[]>(`/agents/${cluster}/nodes`)
   }
@@ -336,6 +345,8 @@ export function useGatewayAPI() {
     jobLog,
     jobGpus,
     jobChecks,
+    jobDiagnostics,
+    jobLogRaw,
     nodes,
     node,
     partitions,

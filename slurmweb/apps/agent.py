@@ -46,6 +46,9 @@ class SlurmwebAppAgent(SlurmwebWebApp, RFLTokenizedRBACWebApp):
         SlurmwebAppRoute(f"/v{get_version()}/job/<int:job>/gpus", views.job_gpus),
         SlurmwebAppRoute(f"/v{get_version()}/job/<int:job>/checks", views.job_checks),
         SlurmwebAppRoute(
+            f"/v{get_version()}/job/<int:job>/diagnostics", views.job_diagnostics
+        ),
+        SlurmwebAppRoute(
             f"/v{get_version()}/job/<int:job>/checks/events", views.job_check_events
         ),
         SlurmwebAppRoute(

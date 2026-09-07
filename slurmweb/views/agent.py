@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import time
 
 from flask import Response, current_app, jsonify, abort, request, stream_with_context
@@ -317,12 +318,175 @@ def job_log(job: int):
     stream = request.args.get("stream", "stdout")
     if stream not in ("stdout", "stderr"):
         abort(400, "stream must be stdout or stderr")
+    if request.args.get("raw") in ("1", "true"):
+        return _raw_log_response(job, job_data, stream)
     try:
         offset = max(0, int(request.args.get("offset", 0)))
         limit = max(1024, min(262144, int(request.args.get("limit", 65536))))
     except ValueError:
         abort(400, "offset and limit must be integers")
     return jsonify(_read_log_chunk(job_data, stream, offset, limit))
+
+
+def _log_path(job_data, stream: str) -> str:
+    path = job_data.get(f"{stream}_expanded", "")
+    if not path and stream == "stderr":
+        path = job_data.get("stdout_expanded", "")
+    return path
+
+
+def _raw_log_response(job: int, job_data, stream: str):
+    """Stream the whole output file as text for download or raw view."""
+    path = _log_path(job_data, stream)
+    if not path:
+        abort(404, "Job output path is not known yet")
+    output = _managed_job_log(path)
+    if not output.exists():
+        abort(404, "Job output file does not exist")
+
+    def generate():
+        with output.open("rb") as handle:
+            while True:
+                block = handle.read(1 << 16)
+                if not block:
+                    break
+                yield block
+
+    return Response(
+        generate(),
+        mimetype="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="job-{job}-{stream}.log"',
+            "Cache-Control": "no-cache, no-store",
+        },
+    )
+
+
+ERROR_LINE = re.compile(
+    r"(traceback \(most recent call last\)|\berror\b|exception|cuda out of memory|"
+    r"out of memory|oom-kill|killed|segmentation fault|core dumped|assertion|"
+    r"srun: error|slurmstepd: error|fatal|panic|command not found|no such file|"
+    r"permission denied|non-zero exit)",
+    re.IGNORECASE,
+)
+
+
+def _error_excerpt(job_data, max_lines: int = 40, tail_bytes: int = 256 * 1024):
+    """Return the most relevant error block from stderr (or stdout) of a job.
+
+    Scans the tail of the file for the last line matching ERROR_LINE and returns
+    that line plus what follows, so a Python traceback or a CUDA OOM message is
+    shown in full. Line numbers are absolute so the UI can jump to them.
+    """
+    for stream in ("stderr", "stdout"):
+        path = _log_path(job_data, stream)
+        if not path:
+            continue
+        try:
+            output = _managed_job_log(path)
+        except HTTPException:
+            continue
+        if not output.exists() or output.stat().st_size == 0:
+            continue
+        size = output.stat().st_size
+        with output.open("rb") as handle:
+            start = max(0, size - tail_bytes)
+            head_lines = 0
+            if start:
+                # Count lines before the tail so numbers stay absolute.
+                remaining = start
+                while remaining:
+                    block = handle.read(min(1 << 20, remaining))
+                    if not block:
+                        break
+                    head_lines += block.count(b"\n")
+                    remaining -= len(block)
+                handle.seek(start)
+                partial = handle.readline()  # drop the cut line
+                head_lines += 1 if partial.endswith(b"\n") else 0
+            tail = handle.read().decode("utf-8", errors="replace")
+        lines = tail.split("\n")
+        if lines and lines[-1] == "":
+            lines.pop()
+        if not lines:
+            continue
+        hit = None
+        for index in range(len(lines) - 1, -1, -1):
+            if ERROR_LINE.search(lines[index]):
+                hit = index
+                # Prefer the start of a traceback block over its last line.
+                for back in range(index - 1, max(-1, index - 60), -1):
+                    if lines[back].startswith("Traceback (most recent call last)"):
+                        hit = back
+                        break
+                break
+        if hit is None:
+            hit = max(0, len(lines) - 12)
+            matched = False
+        else:
+            matched = True
+        excerpt = lines[hit : hit + max_lines]
+        return {
+            "stream": stream,
+            "path": str(output),
+            "line": head_lines + hit + 1,
+            "total_lines": head_lines + len(lines),
+            "matched": matched,
+            "lines": excerpt,
+            "truncated": hit + max_lines < len(lines),
+        }
+    return None
+
+
+def _exit_summary(exit_code):
+    if not isinstance(exit_code, dict):
+        return None
+    return {
+        "status": exit_code.get("status", []),
+        "return_code": exit_code.get("return_code", {}).get("number")
+        if exit_code.get("return_code", {}).get("set")
+        else None,
+        "signal": exit_code.get("signal", {}).get("id", {}).get("number")
+        if exit_code.get("signal", {}).get("id", {}).get("set")
+        else None,
+        "signal_name": exit_code.get("signal", {}).get("name", ""),
+    }
+
+
+def _job_diagnostics(job_data):
+    """Failure summary for terminal jobs: exit codes, failed steps and error excerpt."""
+    states = job_data.get("state", {}).get("current", [])
+    exit_code = _exit_summary(job_data.get("exit_code"))
+    failed_steps = [
+        {
+            "id": step.get("step", {}).get("id"),
+            "name": step.get("step", {}).get("name"),
+            "state": step.get("state", []),
+            "exit_code": _exit_summary(step.get("exit_code")),
+            "nodes": step.get("nodes", {}).get("range", ""),
+        }
+        for step in job_data.get("steps", []) or []
+        if any(state in ("FAILED", "CANCELLED", "OUT_OF_MEMORY", "TIMEOUT", "NODE_FAIL") for state in step.get("state", []))
+        or (step.get("exit_code", {}).get("return_code", {}).get("number") or 0) != 0
+    ]
+    failed = any(state in ("FAILED", "OUT_OF_MEMORY", "TIMEOUT", "NODE_FAIL", "CANCELLED", "BOOT_FAIL", "DEADLINE", "PREEMPTED") for state in states)
+    nonzero = bool(exit_code and ((exit_code.get("return_code") or 0) != 0 or exit_code.get("signal")))
+    if not (failed or nonzero or failed_steps):
+        return None
+    return {
+        "states": states,
+        "reason": job_data.get("state", {}).get("reason", ""),
+        "exit_code": exit_code,
+        "derived_exit_code": _exit_summary(job_data.get("derived_exit_code")),
+        "failed_steps": failed_steps,
+        "excerpt": _error_excerpt(job_data),
+    }
+
+
+@check_jwt
+def job_diagnostics(job: int):
+    job_data = _authorized_job(job)
+    return jsonify(_job_diagnostics(job_data))
 
 
 def _gpu_telemetry(job: int, job_data):
@@ -465,21 +629,36 @@ def _job_summary(job_data):
     """Compact job state pushed on the live ``job`` channel."""
     steps = []
     for step in job_data.get("steps", []) or []:
+        time_ = step.get("time", {})
         steps.append(
             {
                 "id": step.get("step", {}).get("id"),
                 "name": step.get("step", {}).get("name"),
                 "state": step.get("state", []),
-                "elapsed": step.get("time", {}).get("elapsed", 0),
+                "elapsed": time_.get("elapsed", 0),
+                "start": time_.get("start", {}).get("number") if time_.get("start", {}).get("set") else None,
+                "end": time_.get("end", {}).get("number") if time_.get("end", {}).get("set") else None,
+                "exit_code": _exit_summary(step.get("exit_code")),
+                "nodes": step.get("nodes", {}).get("range", ""),
+                "node_count": step.get("nodes", {}).get("count", 0),
+                "tasks": step.get("tasks", {}).get("count", 0),
             }
         )
+    active = _job_is_active(job_data)
+    time_ = job_data.get("time", {})
     return {
         "state": job_data.get("state", {}).get("current", []),
-        "elapsed": job_data.get("time", {}).get("elapsed", 0),
+        "reason": job_data.get("state", {}).get("reason", ""),
+        "elapsed": time_.get("elapsed", 0),
+        "start": time_.get("start"),
+        "end": time_.get("end"),
         "nodes": job_data.get("nodes", ""),
-        "exit_code": job_data.get("exit_code"),
+        "exit_code": _exit_summary(job_data.get("exit_code")),
+        "derived_exit_code": _exit_summary(job_data.get("derived_exit_code")),
         "steps": steps,
-        "active": _job_is_active(job_data),
+        "active": active,
+        # Diagnostics read log files; only computed once the job is over.
+        "diagnostics": None if active else _job_diagnostics(job_data),
     }
 
 
@@ -510,9 +689,9 @@ class JobLiveSession:
         self.job_data = job_data
         self.channels = set()
         self.checks_cursor = 0
-        self.log_stream = "stdout"
-        self.log_offset = 0
-        self.log_path = None
+        # One cursor per output stream. Legacy clients subscribe to a single
+        # stream; the workbench subscribes to both so tabs switch instantly.
+        self.log_streams = {"stdout": {"offset": 0, "path": None}}
         self.log_paused = False
         self.last_gpu = None
         self.last_job = None
@@ -542,12 +721,7 @@ class JobLiveSession:
         if kind == "subscribe":
             self.subscribe(message)
         elif kind == "log":
-            stream = message.get("stream", self.log_stream)
-            if stream not in ("stdout", "stderr"):
-                raise LiveSessionError(CLOSE_BAD_REQUEST, "stream must be stdout or stderr")
-            self.log_stream = stream
-            self.log_offset = _coerce_offset(message.get("offset", 0))
-            self.log_path = None
+            self.log_streams = self._log_streams_from(message)
             self.log_paused = False
             self.channels.add("log")
         elif kind == "pause":
@@ -570,13 +744,7 @@ class JobLiveSession:
             raise LiveSessionError(CLOSE_BAD_REQUEST, "unknown channel in subscribe")
         self.channels = set(channels)
         self.checks_cursor = _coerce_offset(message.get("checks_cursor", 0))
-        log = message.get("log") or {}
-        stream = log.get("stream", "stdout")
-        if stream not in ("stdout", "stderr"):
-            raise LiveSessionError(CLOSE_BAD_REQUEST, "stream must be stdout or stderr")
-        self.log_stream = stream
-        self.log_offset = _coerce_offset(log.get("offset", 0))
-        self.log_path = None
+        self.log_streams = self._log_streams_from(message.get("log") or {})
         self.log_paused = False
         if "checks" in self.channels:
             snapshot = _checks_snapshot(self.job)
@@ -591,7 +759,10 @@ class JobLiveSession:
             {
                 "type": "subscribed",
                 "channels": sorted(self.channels),
-                "cursors": {"checks": self.checks_cursor, "log": {self.log_stream: self.log_offset}},
+                "cursors": {
+                    "checks": self.checks_cursor,
+                    "log": {name: state["offset"] for name, state in self.log_streams.items()},
+                },
             }
         )
 
@@ -636,19 +807,44 @@ class JobLiveSession:
             self.checks_cursor = event["seq"]
             self.send({"type": "check", "event": event})
 
+    @staticmethod
+    def _log_streams_from(message):
+        """Accept ``{"streams": {"stdout": 0, "stderr": 0}}`` or legacy ``stream``/``offset``."""
+        streams = message.get("streams")
+        if streams is None:
+            stream = message.get("stream", "stdout")
+            streams = {stream: message.get("offset", 0)}
+        if not isinstance(streams, dict) or not streams:
+            raise LiveSessionError(CLOSE_BAD_REQUEST, "log.streams must map stream names to offsets")
+        parsed = {}
+        for name, offset in streams.items():
+            if name not in ("stdout", "stderr"):
+                raise LiveSessionError(CLOSE_BAD_REQUEST, "stream must be stdout or stderr")
+            parsed[name] = {"offset": _coerce_offset(offset), "path": None}
+        return parsed
+
     def push_log(self):
-        try:
-            chunk = _read_log_chunk(self.job_data, self.log_stream, self.log_offset, self.LOG_LIMIT)
-        except HTTPException as err:
-            self.send({"type": "error", "code": err.code, "message": err.description, "transient": True})
-            self.log_paused = True
-            return
-        changed = chunk["chunk"] or chunk.get("rotated") or chunk["path"] != self.log_path
-        if not changed:
-            return
-        self.log_path = chunk["path"]
-        self.log_offset = chunk["next_offset"]
-        self.send({"type": "log", "stream": self.log_stream, **chunk})
+        stdout_path = _log_path(self.job_data, "stdout")
+        for name, state in self.log_streams.items():
+            if name == "stderr" and stdout_path and _log_path(self.job_data, "stderr") == stdout_path:
+                # Slurm merges stderr into stdout unless --error is given. Say so once
+                # instead of streaming the same file twice.
+                if state["path"] != "merged":
+                    state["path"] = "merged"
+                    self.send({"type": "log", "stream": name, "path": stdout_path, "chunk": "", "offset": 0, "next_offset": 0, "waiting": False, "merged": True})
+                continue
+            try:
+                chunk = _read_log_chunk(self.job_data, name, state["offset"], self.LOG_LIMIT)
+            except HTTPException as err:
+                self.send({"type": "error", "code": err.code, "message": err.description, "transient": True})
+                self.log_paused = True
+                return
+            changed = chunk["chunk"] or chunk.get("rotated") or chunk["path"] != state["path"]
+            if not changed:
+                continue
+            state["path"] = chunk["path"]
+            state["offset"] = chunk["next_offset"]
+            self.send({"type": "log", "stream": name, **chunk})
 
     def push_gpu(self):
         telemetry = _gpu_telemetry(self.job, self.job_data)

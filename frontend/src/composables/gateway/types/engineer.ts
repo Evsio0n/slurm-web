@@ -94,20 +94,57 @@ export interface JobLiveCursors {
   log: { stream: 'stdout' | 'stderr'; offset: number }
 }
 
+export interface JobExitSummary {
+  status: string[]
+  return_code: number | null
+  signal: number | null
+  signal_name: string
+}
+
 export interface JobLiveStepSummary {
   id: string | null
   name: string | null
   state: string[]
   elapsed: number
+  start: number | null
+  end: number | null
+  exit_code: JobExitSummary | null
+  nodes: string
+  node_count: number
+  tasks: number
+}
+
+export interface JobErrorExcerpt {
+  stream: 'stdout' | 'stderr'
+  path: string
+  line: number
+  total_lines: number
+  matched: boolean
+  lines: string[]
+  truncated: boolean
+}
+
+export interface JobDiagnostics {
+  states: string[]
+  reason: string
+  exit_code: JobExitSummary | null
+  derived_exit_code: JobExitSummary | null
+  failed_steps: { id: string | null; name: string | null; state: string[]; exit_code: JobExitSummary | null; nodes: string }[]
+  excerpt: JobErrorExcerpt | null
 }
 
 export interface JobLiveJobSummary {
   state: string[]
+  reason: string
   elapsed: number
+  start: number | null
+  end: number | null
   nodes: string
-  exit_code: unknown
+  exit_code: JobExitSummary | null
+  derived_exit_code: JobExitSummary | null
   steps: JobLiveStepSummary[]
   active: boolean
+  diagnostics: JobDiagnostics | null
 }
 
 export type JobLiveServerMessage =
@@ -115,7 +152,7 @@ export type JobLiveServerMessage =
   | ({ type: 'subscribed'; channels: JobLiveChannel[] } & { cursors: Record<string, unknown> })
   | ({ type: 'checks' } & JobChecksSnapshot)
   | { type: 'check'; event: JobCheckEvent }
-  | ({ type: 'log'; stream: 'stdout' | 'stderr' } & JobLogChunk)
+  | ({ type: 'log'; stream: 'stdout' | 'stderr'; merged?: boolean } & JobLogChunk)
   | ({ type: 'gpu' } & JobGpuTelemetry)
   | ({ type: 'job' } & JobLiveJobSummary)
   | { type: 'heartbeat'; ts: number; cursor: number }

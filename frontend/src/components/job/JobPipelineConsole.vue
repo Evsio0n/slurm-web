@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import type { SlurmJobDetail, SlurmJobStep } from '@/composables/gateway/slurm/types'
 import type {
   JobCheckEvent,
+  JobDiagnostics,
+  JobExitSummary,
   JobGpuTelemetry,
   JobLiveJobSummary,
   JobLiveServerMessage,
@@ -10,37 +12,45 @@ import type {
 } from '@/composables/gateway/types/engineer'
 import { useGatewayAPI } from '@/composables/GatewayAPI'
 import { useJobLiveSocket } from '@/composables/useJobLiveSocket'
+import { LogModel } from '@/composables/logParser'
 import { extractSlurmTRESResources } from '@/composables/gateway/slurm/tres'
 import { jobAllocatedGPU } from '@/composables/gateway/slurm/job'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { useHttp } from '@/plugins/http'
 import { useAuthStore } from '@/stores/auth'
+import JobLogViewer from '@/components/job/JobLogViewer.vue'
+import type { LogStreamTab } from '@/components/job/JobLogViewer.vue'
+
+type Stream = 'stdout' | 'stderr'
+const STREAMS: Stream[] = ['stdout', 'stderr']
+const TERMINAL_FAILURE = ['FAILED', 'OUT_OF_MEMORY', 'TIMEOUT', 'NODE_FAIL', 'CANCELLED', 'BOOT_FAIL', 'DEADLINE', 'PREEMPTED']
 
 const props = defineProps<{ cluster: string; id: number; job: SlurmJobDetail }>()
 const gateway = useGatewayAPI()
 const http = useHttp()
 const auth = useAuthStore()
-const output = ref('')
-const outputPath = ref('Waiting for output path…')
-const offset = ref(0)
-const stream = ref<'stdout' | 'stderr'>('stdout')
+
+/* Output streams: one parsed model and one byte cursor per stream. */
+const models = { stdout: new LogModel(), stderr: new LogModel() }
+const logVersion = ref(0)
+const offsets = ref<Record<Stream, number>>({ stdout: 0, stderr: 0 })
+const paths = ref<Record<Stream, string>>({ stdout: '', stderr: '' })
+const merged = ref(false)
+const stream = ref<Stream>('stdout')
 const paused = ref(false)
-const follow = ref(true)
-const logElement = ref<HTMLElement>()
-const gpu = ref<JobGpuTelemetry>()
 const logError = ref('')
+const viewer = ref<InstanceType<typeof JobLogViewer>>()
+const activeModel = shallowRef(models.stdout)
+
+const gpu = ref<JobGpuTelemetry>()
 const checks = ref<JobCheckEvent[]>([])
 const checksCursor = ref(0)
 const checksClock = ref(Date.now())
 const liveJob = ref<JobLiveJobSummary>()
-const lastMessageAt = ref(0)
+const diagnostics = ref<JobDiagnostics | null>(null)
 let checksClockTimer = -1
 
-/*
- * Transport. One multiplexed WebSocket carries checks, log, gpu and job state.
- * When the socket cannot be established (proxy without upgrade support, old
- * agent) the console falls back to the previous REST polling + SSE path.
- */
+/* Transport: WebSocket first, REST polling + SSE only when it never worked. */
 const fallback = ref(false)
 let fallbackChecksController = new AbortController()
 let logTimer = -1
@@ -49,13 +59,19 @@ let gpuTimer = -1
 const live = useJobLiveSocket({
   cluster: props.cluster,
   jobId: () => props.id,
-  cursors: () => ({
-    checks: checksCursor.value,
-    log: { stream: stream.value, offset: offset.value }
-  }),
+  cursors: () => ({ checks: checksCursor.value, log: { stream: stream.value, offset: offsets.value[stream.value] } }),
   onMessage: handleLiveMessage,
   onFallback: startFallback
 })
+
+/* Subscribe to both streams so the tabs carry counts and switching is instant. */
+live.subscribe = () =>
+  live.send({
+    type: 'subscribe',
+    channels: ['checks', 'log', 'gpu', 'job'],
+    checks_cursor: checksCursor.value,
+    log: { streams: { stdout: offsets.value.stdout, stderr: offsets.value.stderr } }
+  })
 
 const transport = computed(() => {
   if (fallback.value) return { label: 'SSE · POLLING', state: 'fallback' }
@@ -65,19 +81,19 @@ const transport = computed(() => {
   return { label: 'WS · CONNECTING', state: 'connecting' }
 })
 
+/* Derived job facts. The live summary wins over the slower detail poller. */
 const resources = computed(() => extractSlurmTRESResources(props.job.tres.allocated))
-const allocatedGpu = computed(() => jobAllocatedGPU(props.job))
-/* Live job summary wins over the slower detail poller so counters tick in real time. */
+const allocatedGpu = computed(() => Math.max(0, jobAllocatedGPU(props.job)))
 const elapsed = computed(() => liveJob.value?.elapsed ?? props.job.time.elapsed ?? 0)
 const status = computed(() => liveJob.value?.state[0] || props.job.state.current[0] || 'UNKNOWN')
+const isActive = computed(() => (liveJob.value ? liveJob.value.active : !['COMPLETED', ...TERMINAL_FAILURE].includes(status.value)))
 const limitSeconds = computed(() =>
   props.job.time.limit?.set && !props.job.time.limit.infinite ? props.job.time.limit.number * 60 : 0
 )
-const progress = computed(() =>
-  limitSeconds.value ? Math.min(100, (elapsed.value / limitSeconds.value) * 100) : 0
-)
+const progress = computed(() => (limitSeconds.value ? Math.min(100, (elapsed.value / limitSeconds.value) * 100) : 0))
 const gpuHours = computed(() => (allocatedGpu.value * elapsed.value) / 3600)
-const cpuHours = computed(() => ((resources.value.cpu || 0) * elapsed.value) / 3600)
+const cpuHours = computed(() => (Math.max(0, resources.value.cpu) * elapsed.value) / 3600)
+const gpuBudgetHours = computed(() => (limitSeconds.value ? (allocatedGpu.value * limitSeconds.value) / 3600 : 0))
 const allGpus = computed(() => gpu.value?.nodes.flatMap((node) => node.gpus.map((device) => ({ node, device }))) || [])
 const checkGroups = computed(() => {
   const groups = new Map<string, { step: string; task: number; node: string; checks: JobCheckEvent[] }>()
@@ -88,24 +104,92 @@ const checkGroups = computed(() => {
   }
   return [...groups.values()]
 })
-const stages = computed(() => {
-  if (liveJob.value?.steps.length) {
-    return liveJob.value.steps.map((step) => ({
-      id: step.id || 'batch',
-      name: step.name || step.id || 'batch',
-      state: step.state[0] || 'UNKNOWN',
-      elapsed: step.elapsed,
-      peak: ''
-    }))
-  }
-  return props.job.steps.map((step) => ({
-    id: step.step.id,
-    name: stepName(step),
-    state: stepStatus(step),
-    elapsed: step.time.elapsed,
-    peak: stepPeakMemory(step)
+
+interface Stage {
+  id: string
+  name: string
+  state: string
+  elapsed: number
+  share: number
+  exit?: JobExitSummary | null
+  nodes?: string
+  tasks?: number
+  peak: string
+  section: boolean
+}
+
+const stages = computed<Stage[]>(() => {
+  const source = liveJob.value?.steps.length
+    ? liveJob.value.steps.map((step) => ({
+        id: step.id || 'batch',
+        name: step.name || step.id || 'batch',
+        state: step.state[0] || 'UNKNOWN',
+        elapsed: step.elapsed,
+        exit: step.exit_code,
+        nodes: step.nodes,
+        tasks: step.tasks,
+        peak: ''
+      }))
+    : props.job.steps.map((step) => ({
+        id: step.step.id,
+        name: stepName(step),
+        state: stepStatus(step),
+        elapsed: step.time.elapsed,
+        exit: exitSummary(step),
+        nodes: step.nodes?.range,
+        tasks: step.tasks?.count,
+        peak: stepPeakMemory(step)
+      }))
+  const total = Math.max(1, ...source.map((s) => s.elapsed))
+  void logVersion.value
+  const sections = new Set(models.stdout.sections.map((s) => s.name))
+  return source.map((s) => ({ ...s, share: (s.elapsed / total) * 100, section: sections.has(s.name) || sections.has(s.id) }))
+})
+
+const streamTabs = computed<LogStreamTab[]>(() => {
+  void logVersion.value
+  return STREAMS.map((id) => ({
+    id,
+    lines: models[id].lines.length,
+    errors: models[id].errorLines,
+    merged: id === 'stderr' && merged.value
   }))
 })
+
+const failure = computed(() => {
+  const d = diagnostics.value
+  if (!d) return undefined
+  const exit = d.exit_code
+  const derived = d.derived_exit_code
+  const step = d.failed_steps[0]
+  return {
+    title: d.states[0] || status.value,
+    exit: exitLabel(exit),
+    derived: derived && (derived.return_code || derived.signal) ? exitLabel(derived) : '',
+    reason: d.reason && d.reason !== 'None' ? d.reason : '',
+    step: step ? `${step.name || step.id}${step.exit_code ? ` · ${exitLabel(step.exit_code)}` : ''}${step.nodes ? ` · ${step.nodes}` : ''}` : '',
+    steps: d.failed_steps.length,
+    excerpt: d.excerpt
+  }
+})
+
+function exitSummary(step: SlurmJobStep): JobExitSummary | null {
+  const code = step.exit_code
+  if (!code) return null
+  return {
+    status: code.status,
+    return_code: code.return_code?.set ? code.return_code.number : null,
+    signal: code.signal?.id?.set ? code.signal.id.number : null,
+    signal_name: code.signal?.name || ''
+  }
+}
+
+function exitLabel(exit: JobExitSummary | null | undefined) {
+  if (!exit) return ''
+  if (exit.signal) return `signal ${exit.signal}${exit.signal_name ? ` (${exit.signal_name})` : ''}`
+  if (exit.return_code === null) return exit.status[0] || ''
+  return `exit ${exit.return_code}`
+}
 
 function duration(value: number) {
   const seconds = Math.max(0, Math.floor(value))
@@ -165,26 +249,24 @@ function upsertCheck(event: JobCheckEvent) {
   checksCursor.value = Math.max(checksCursor.value, event.seq)
 }
 
-async function appendLog(chunk: JobLogChunk) {
-  outputPath.value = chunk.path || 'Output file is not available yet'
+function appendLog(id: Stream, chunk: JobLogChunk & { merged?: boolean }) {
+  if (chunk.merged) {
+    merged.value = true
+    paths.value.stderr = chunk.path
+    return
+  }
+  if (chunk.path) paths.value[id] = chunk.path
   logError.value = ''
   if (chunk.rotated) {
-    offset.value = 0
-    output.value = '[output rotated]\n'
+    models[id].reset()
+    offsets.value[id] = 0
   }
-  if (chunk.chunk) {
-    output.value += chunk.chunk
-    if (output.value.length > 2_000_000) output.value = output.value.slice(-1_500_000)
-  }
-  offset.value = chunk.next_offset
-  if (chunk.chunk && follow.value) {
-    await nextTick()
-    if (logElement.value) logElement.value.scrollTop = logElement.value.scrollHeight
-  }
+  if (chunk.chunk) models[id].append(chunk.chunk)
+  offsets.value[id] = chunk.next_offset
+  logVersion.value++
 }
 
 function handleLiveMessage(message: JobLiveServerMessage) {
-  lastMessageAt.value = Date.now()
   switch (message.type) {
     case 'checks':
       checks.value = message.checks
@@ -194,13 +276,19 @@ function handleLiveMessage(message: JobLiveServerMessage) {
       upsertCheck(message.event)
       break
     case 'log':
-      if (message.stream === stream.value) void appendLog(message)
+      appendLog(message.stream, message)
       break
     case 'gpu':
       gpu.value = { nodes: message.nodes, summary: message.summary }
       break
     case 'job':
       liveJob.value = message
+      if (message.diagnostics !== undefined) diagnostics.value = message.diagnostics
+      if (!message.active) {
+        models.stdout.flush()
+        models.stderr.flush()
+        logVersion.value++
+      }
       break
     case 'error':
       if (!message.transient) logError.value = message.message
@@ -210,7 +298,7 @@ function handleLiveMessage(message: JobLiveServerMessage) {
   }
 }
 
-/* Fallback transport: previous REST polling and SSE, only started when WebSocket gave up. */
+/* Fallback transport: previous REST polling and SSE, only when WebSocket gave up. */
 
 async function loadChecks() {
   const snapshot = await gateway.jobChecks(props.cluster, props.id)
@@ -250,8 +338,8 @@ async function startFallbackChecks() {
 async function pollLog() {
   if (paused.value) return
   try {
-    const chunk = await gateway.jobLog(props.cluster, props.id, stream.value, offset.value)
-    await appendLog(chunk)
+    const chunk = await gateway.jobLog(props.cluster, props.id, stream.value, offsets.value[stream.value])
+    appendLog(stream.value, chunk)
   } catch (error) {
     logError.value = error instanceof Error ? error.message : String(error)
   }
@@ -265,11 +353,21 @@ async function pollGpu() {
   }
 }
 
+async function pollDiagnostics() {
+  if (isActive.value) return
+  try {
+    diagnostics.value = await gateway.jobDiagnostics(props.cluster, props.id)
+  } catch {
+    diagnostics.value = null
+  }
+}
+
 function startFallback() {
   if (fallback.value) return
   fallback.value = true
   void pollLog()
   void pollGpu()
+  void pollDiagnostics()
   void startFallbackChecks()
   logTimer = window.setInterval(pollLog, 1000)
   gpuTimer = window.setInterval(pollGpu, 2000)
@@ -283,42 +381,74 @@ function stopFallback() {
 
 /* User controls */
 
-function switchStream() {
-  offset.value = 0
-  output.value = ''
-  paused.value = false
-  if (fallback.value) void pollLog()
-  else live.send({ type: 'log', stream: stream.value, offset: 0 })
-}
-
 function togglePause() {
   paused.value = !paused.value
   if (!fallback.value) live.send({ type: paused.value ? 'pause' : 'resume', channel: 'log' })
 }
 
 function clearView() {
-  /* Only the view is cleared; the byte offset is kept so nothing is re-downloaded. */
-  output.value = ''
+  /* Only the parsed view is cleared; byte offsets are kept so nothing is re-downloaded. */
+  models[stream.value].reset()
+  logVersion.value++
+}
+
+async function downloadLog() {
+  try {
+    const blob = await gateway.jobLogRaw(props.cluster, props.id, stream.value)
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `job-${props.id}-${stream.value}.log`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+  } catch (error) {
+    logError.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+function openExcerpt() {
+  const excerpt = diagnostics.value?.excerpt
+  if (!excerpt) return
+  if (excerpt.stream !== stream.value && !(excerpt.stream === 'stderr' && merged.value)) stream.value = excerpt.stream
+  window.setTimeout(() => viewer.value?.scrollToLine(excerpt.line), 50)
+}
+
+function openStage(stage: Stage) {
+  if (!stage.section) return
+  if (stream.value !== 'stdout') stream.value = 'stdout'
+  window.setTimeout(() => viewer.value?.scrollToSection(stage.name) || viewer.value?.scrollToSection(stage.id), 50)
 }
 
 function resetForNewJob() {
-  offset.value = 0
-  output.value = ''
+  models.stdout.reset()
+  models.stderr.reset()
+  offsets.value = { stdout: 0, stderr: 0 }
+  paths.value = { stdout: '', stderr: '' }
+  merged.value = false
+  logVersion.value++
   checks.value = []
   checksCursor.value = 0
   gpu.value = undefined
   liveJob.value = undefined
+  diagnostics.value = null
   if (fallback.value) {
     void pollLog()
     void pollGpu()
+    void pollDiagnostics()
     void startFallbackChecks()
   } else {
     live.restart()
   }
 }
 
-watch(stream, switchStream)
+watch(stream, (value) => {
+  activeModel.value = models[value]
+  if (fallback.value) void pollLog()
+})
 watch(() => props.id, resetForNewJob)
+watch(isActive, (active, was) => {
+  if (was && !active && fallback.value) void pollDiagnostics()
+})
 
 onMounted(() => {
   live.connect()
@@ -349,12 +479,33 @@ onUnmounted(() => {
 
     <div class="ch-metrics">
       <div class="ch-metric"><span>Elapsed</span><strong>{{ duration(elapsed) }}</strong><small v-if="limitSeconds">{{ number(progress) }}% of {{ duration(limitSeconds) }}</small></div>
-      <div class="ch-metric"><span>GPU consumption</span><strong>{{ number(gpuHours, 2) }} GPU-h</strong><small>{{ allocatedGpu }} GPU allocated</small></div>
-      <div class="ch-metric"><span>CPU consumption</span><strong>{{ number(cpuHours, 2) }} CPU-h</strong><small>{{ resources.cpu }} CPU allocated</small></div>
-      <div class="ch-metric"><span>Live GPU util</span><strong>{{ number(gpu?.summary.utilization || 0) }}%</strong><small>{{ gpu?.summary.count || 0 }} GPU reporting</small></div>
-      <div class="ch-metric"><span>GPU memory</span><strong>{{ number((gpu?.summary.memory_used_mb || 0) / 1024) }} GiB</strong><small>of {{ number((gpu?.summary.memory_total_mb || 0) / 1024) }} GiB</small></div>
-      <div class="ch-metric"><span>Power</span><strong>{{ number(gpu?.summary.power_watts || 0) }} W</strong><small>max {{ number(gpu?.summary.temperature_max || 0) }} °C</small></div>
+      <div class="ch-metric">
+        <span>GPU consumption</span>
+        <strong>{{ allocatedGpu ? `${number(gpuHours, 2)} GPU-h` : '—' }}</strong>
+        <small>{{ allocatedGpu ? `${allocatedGpu} GPU allocated${gpuBudgetHours ? ` · ${number(gpuBudgetHours, 1)} GPU-h budget` : ''}` : 'no GPU allocated' }}</small>
+      </div>
+      <div class="ch-metric"><span>CPU consumption</span><strong>{{ number(cpuHours, 2) }} CPU-h</strong><small>{{ Math.max(0, resources.cpu) }} CPU allocated</small></div>
+      <div class="ch-metric"><span>Live GPU util</span><strong>{{ isActive ? `${number(gpu?.summary.utilization || 0)}%` : '—' }}</strong><small>{{ isActive ? `${gpu?.summary.count || 0} GPU reporting` : 'job finished' }}</small></div>
+      <div class="ch-metric"><span>GPU memory</span><strong>{{ isActive ? `${number((gpu?.summary.memory_used_mb || 0) / 1024)} GiB` : '—' }}</strong><small>{{ isActive ? `of ${number((gpu?.summary.memory_total_mb || 0) / 1024)} GiB` : 'job finished' }}</small></div>
+      <div class="ch-metric"><span>Power</span><strong>{{ isActive ? `${number(gpu?.summary.power_watts || 0)} W` : '—' }}</strong><small>{{ isActive ? `max ${number(gpu?.summary.temperature_max || 0)} °C` : 'job finished' }}</small></div>
     </div>
+
+    <section v-if="failure" class="ch-failure">
+      <header>
+        <div>× {{ failure.title }}<span v-if="failure.step"> · {{ failure.step }}</span></div>
+        <span>{{ failure.exit }}<template v-if="failure.derived"> · derived {{ failure.derived }}</template></span>
+      </header>
+      <div class="ch-failure-facts">
+        <div v-if="failure.reason">Reason <b>{{ failure.reason }}</b></div>
+        <div v-if="failure.steps > 1">Failed steps <b>{{ failure.steps }}</b></div>
+        <div v-if="failure.excerpt">Source <b>{{ failure.excerpt.stream }}:{{ failure.excerpt.line }}</b><template v-if="!failure.excerpt.matched"> (last lines, no error pattern matched)</template></div>
+        <div v-else>No output file available for an error excerpt.</div>
+      </div>
+      <pre v-if="failure.excerpt">{{ failure.excerpt.lines.join('\n') }}{{ failure.excerpt.truncated ? '\n…' : '' }}</pre>
+      <div v-if="failure.excerpt" class="ch-failure-actions">
+        <button type="button" @click="openExcerpt">Open in log ↓</button>
+      </div>
+    </section>
 
     <section class="ch-panel">
       <header><strong>Pipeline</strong><span>{{ stages.length || 1 }} stages · {{ duration(elapsed) }}</span></header>
@@ -362,8 +513,12 @@ onUnmounted(() => {
         <div v-if="!stages.length" class="ch-stage" :data-state="status">
           <i></i><strong>batch</strong><span>{{ status }} · {{ duration(elapsed) }}</span>
         </div>
-        <div v-for="stage in stages" :key="stage.id" class="ch-stage" :data-state="stage.state">
-          <i></i><strong>{{ stage.name }}</strong><span>{{ stage.state }} · {{ duration(stage.elapsed) }}</span><small>{{ stage.peak }}</small>
+        <div v-for="stage in stages" :key="stage.id" class="ch-stage" :data-state="stage.state" :data-clickable="stage.section" :title="stage.section ? 'Jump to this section in the log' : ''" @click="openStage(stage)">
+          <i></i>
+          <strong>{{ stage.name }}</strong>
+          <span>{{ stage.state }} · {{ duration(stage.elapsed) }}<template v-if="stage.tasks"> · {{ stage.tasks }} task{{ stage.tasks > 1 ? 's' : '' }}</template></span>
+          <small>{{ stage.peak }}<em v-if="stage.exit && (stage.exit.return_code || stage.exit.signal)">{{ exitLabel(stage.exit) }}</em></small>
+          <div class="ch-stage-bar"><i :style="{ width: `${Math.max(3, stage.share)}%` }"></i></div>
         </div>
       </div>
     </section>
@@ -380,11 +535,17 @@ onUnmounted(() => {
           </div>
         </article>
       </div>
-      <p v-else class="ch-empty">No structured checks emitted yet. Raw pipeline output remains live.</p>
+      <div v-else class="ch-snippet">
+        No structured checks for this job. Emit them from any task with <b>slurm-check</b>; sections fold the log like a CI job:
+        <code>slurm-check section start load-model "Load model"
+slurm-check running load-model --progress 40 --message "shard 12/29"
+slurm-check passed load-model --duration-ms 31042
+slurm-check section end load-model</code>
+      </div>
     </section>
 
     <section class="ch-panel">
-      <header><strong>Live GPU allocation</strong><span class="ch-live" :class="{ stale: !allGpus.length }">{{ allGpus.length ? 'LIVE' : 'WAITING' }}</span></header>
+      <header><strong>Live GPU allocation</strong><span class="ch-live" :class="{ stale: !allGpus.length }">{{ allGpus.length ? 'LIVE' : isActive ? 'WAITING' : 'FINISHED' }}</span></header>
       <div v-if="allGpus.length" class="ch-gpus">
         <article v-for="entry in allGpus" :key="`${entry.node.node}-${entry.device.uuid}`" class="ch-gpu">
           <div><strong>{{ entry.node.node }} · GPU {{ entry.device.index }}</strong><b>{{ number(entry.device.utilization_gpu) }}%</b></div>
@@ -392,21 +553,27 @@ onUnmounted(() => {
           <p><span>VRAM {{ number(entry.device.memory_used_mb / 1024) }} / {{ number(entry.device.memory_total_mb / 1024) }} GiB</span><span>{{ number(entry.device.temperature) }} °C</span><span>{{ number(entry.device.power_watts) }} W</span></p>
         </article>
       </div>
-      <p v-else class="ch-empty">No fresh GPU process telemetry for this job.</p>
+      <p v-else-if="!isActive" class="ch-live-note">Live telemetry is only sampled while the job runs. Peak memory per step is shown in the pipeline above.</p>
+      <p v-else-if="!allocatedGpu" class="ch-live-note">This job has no GPU allocated.</p>
+      <p v-else class="ch-live-note">Waiting for GPU telemetry from {{ liveJob?.nodes || job.nodes || 'the allocated nodes' }}. The node collector reports every 2 seconds once processes of this job appear on a GPU.</p>
     </section>
 
-    <section class="ch-panel ch-terminal-panel">
-      <header class="ch-terminal-toolbar">
-        <div><span class="ch-window-dots">● ● ●</span><strong>Pipeline output</strong><span class="ch-terminal-state" :data-state="paused ? 'paused' : transport.state">{{ paused ? 'PAUSED' : transport.state === 'live' ? 'STREAMING' : transport.label }}</span></div>
-        <div class="ch-actions">
-          <select v-model="stream"><option value="stdout">stdout</option><option value="stderr">stderr</option></select>
-          <label><input v-model="follow" type="checkbox" /> Follow</label>
-          <button type="button" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</button>
-          <button type="button" @click="clearView">Clear view</button>
-        </div>
-      </header>
-      <div class="ch-log-path">{{ outputPath }}</div>
-      <pre ref="logElement" class="ch-log"><code>{{ output || (logError ? `Log error: ${logError}` : 'Waiting for pipeline output…') }}</code></pre>
-    </section>
+    <JobLogViewer
+      ref="viewer"
+      :model="activeModel"
+      :version="logVersion"
+      :streams="streamTabs"
+      :stream="stream"
+      :path="paths[stream] || (merged && stream === 'stderr' ? paths.stdout : '') || 'Output file is not available yet'"
+      :live="isActive"
+      :paused="paused"
+      :transport="transport.label"
+      :transport-state="transport.state"
+      :error="logError"
+      @update:stream="stream = $event"
+      @toggle-pause="togglePause"
+      @clear="clearView"
+      @download="downloadLog"
+    />
   </div>
 </template>

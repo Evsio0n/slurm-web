@@ -1,0 +1,31 @@
+import { describe, expect, it } from 'vitest'
+import { LogModel } from '@/composables/logParser'
+
+describe('LogModel', () => {
+  it('parses ansi, timestamps, sections and errors incrementally', () => {
+    const m = new LogModel()
+    m.append('[2026-09-07T13:47:05+00:00] plain line\n')
+    m.append('\x1b[0Ksection_start:100:prep\r\x1b[0KPrepare runtime\n')
+    m.append('\x1b[31mred error: boom\x1b[0m and back\n')
+    m.append('progress 10%\rprogress 50%\rprogress 100%\n')
+    m.append('\x1b[0Ksection_end:130:prep\r\x1b[0K')
+    m.append('::group::GitHub group\ninside gh\n::endgroup::\n')
+    m.append('partial')
+    expect(m.lines.length).toBe(6)
+    expect(m.lines[0].ts).toBe('2026-09-07T13:47:05+00:00')
+    expect(m.lines[0].segments[0].text).toBe('plain line')
+    expect(m.lines[1].header).toBe(true)
+    expect(m.lines[1].raw).toBe('Prepare runtime')
+    expect(m.lines[2].level).toBe('error')
+    expect(m.lines[2].segments[0].cls).toContain('a-fg-31')
+    expect(m.lines[2].segments[1].text).toBe(' and back')
+    expect(m.lines[3].segments[0].text).toBe('progress 100%')
+    expect(m.sections[0]).toMatchObject({ name: 'prep', startTs: 100, endTs: 130, hasError: true, open: false, firstLine: 2, lastLine: 4 })
+    expect(m.lines[4].header).toBe(true)
+    expect(m.lines[5].section).toBe(m.sections[1].name)
+    expect(m.errorLines).toBe(1)
+    m.flush()
+    expect(m.lines.length).toBe(7)
+    expect(m.lines[6].raw).toBe('partial')
+  })
+})
