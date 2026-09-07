@@ -44,6 +44,7 @@ import type {
   SlurmQos,
   SlurmReservation
 } from '@/composables/gateway/slurm/types'
+import type { JobGpuTelemetry, JobLogChunk } from '@/composables/gateway/types/engineer'
 
 export const GatewayGenericAPIKeys = ['clusters', 'users', 'message_login'] as const
 export type GatewayGenericAPIKey = (typeof GatewayGenericAPIKeys)[number]
@@ -173,6 +174,21 @@ export function useGatewayAPI() {
 
   async function job(cluster: string, jobId: number): Promise<SlurmJobDetail> {
     return await restAPI.get<SlurmJobDetail>(`/agents/${cluster}/job/${jobId}`)
+  }
+
+  async function jobLog(
+    cluster: string,
+    jobId: number,
+    stream: 'stdout' | 'stderr',
+    offset: number
+  ): Promise<JobLogChunk> {
+    return await restAPI.get<JobLogChunk>(
+      `/agents/${cluster}/job/${jobId}/log?stream=${stream}&offset=${offset}&limit=131072`
+    )
+  }
+
+  async function jobGpus(cluster: string, jobId: number): Promise<JobGpuTelemetry> {
+    return await restAPI.get<JobGpuTelemetry>(`/agents/${cluster}/job/${jobId}/gpus`)
   }
 
   async function nodes(cluster: string): Promise<SlurmNode[]> {
@@ -309,6 +325,8 @@ export function useGatewayAPI() {
     jobs,
     jobsPast,
     job,
+    jobLog,
+    jobGpus,
     nodes,
     node,
     partitions,

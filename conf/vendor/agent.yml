@@ -235,6 +235,10 @@ filters:
     - script
     - state
     - steps
+    - stderr
+    - stderr_expanded
+    - stdout
+    - stdout_expanded
     - submit_line
     - time
     - tres

@@ -35,6 +35,54 @@
   }
 }
 
+/* ClickHouse-inspired engineering workbench: dense, fast, keyboard-friendly and
+   built around a yellow execution accent with terminal-first dark surfaces. */
+@layer components {
+  .ch-workbench { --ch-yellow:#faff69; --ch-bg:#111214; --ch-panel:#18191c; --ch-line:#303238; --ch-muted:#9a9da6; color:#f7f7f7; background:var(--ch-bg); border:1px solid var(--ch-line); border-radius:10px; overflow:hidden; box-shadow:0 16px 48px rgb(0 0 0 / .22); }
+  .ch-run-header { display:flex; justify-content:space-between; gap:1rem; padding:1.25rem 1.5rem; border-bottom:1px solid var(--ch-line); background:#151619; }
+  .ch-run-header h1 { margin:.18rem 0; font-size:1.35rem; line-height:1.5; font-weight:650; }
+  .ch-eyebrow { margin:0; color:var(--ch-yellow); font-size:.68rem; font-weight:700; letter-spacing:.12em; }
+  .ch-subtitle { margin:0; color:var(--ch-muted); font-size:.78rem; }
+  .ch-status { align-self:flex-start; border:1px solid #484b52; border-radius:999px; padding:.38rem .68rem; font-size:.72rem; font-weight:700; }
+  .ch-status[data-state='RUNNING'] { border-color:#7e8429; color:var(--ch-yellow); background:#2b2c18; }
+  .ch-status[data-state='COMPLETED'] { border-color:#28745b; color:#6ee7b7; background:#112b23; }
+  .ch-status[data-state='FAILED'],.ch-status[data-state='OUT_OF_MEMORY'] { border-color:#8d3340; color:#ff7d8e; background:#35171c; }
+  .ch-metrics { display:grid; grid-template-columns:repeat(6,minmax(8rem,1fr)); gap:1px; background:var(--ch-line); border-bottom:1px solid var(--ch-line); }
+  .ch-metric { min-width:0; padding:.9rem 1rem; background:var(--ch-panel); }
+  .ch-metric span,.ch-metric small { display:block; color:var(--ch-muted); font-size:.68rem; }
+  .ch-metric span { text-transform:uppercase; letter-spacing:.07em; }
+  .ch-metric strong { display:block; margin:.22rem 0; font-size:1.12rem; font-variant-numeric:tabular-nums; }
+  .ch-panel { margin:1rem; border:1px solid var(--ch-line); border-radius:7px; overflow:hidden; background:var(--ch-panel); }
+  .ch-panel>header { min-height:2.7rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.65rem .85rem; border-bottom:1px solid var(--ch-line); color:var(--ch-muted); font-size:.72rem; }
+  .ch-panel>header strong { color:#f7f7f7; font-size:.78rem; }
+  .ch-stages { display:flex; overflow:auto; padding:1.1rem; }
+  .ch-stage { position:relative; min-width:10.5rem; display:grid; grid-template-columns:1.4rem 1fr; grid-template-rows:auto auto auto; }
+  .ch-stage:not(:last-child)::after { content:''; position:absolute; left:1.15rem; right:-.1rem; top:.48rem; height:1px; background:#43464d; }
+  .ch-stage i { position:relative; z-index:1; grid-row:1/4; width:.95rem; height:.95rem; border:2px solid #60636b; border-radius:50%; background:var(--ch-panel); }
+  .ch-stage strong { font-size:.76rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:.75rem; }
+  .ch-stage span,.ch-stage small { color:var(--ch-muted); font-size:.66rem; }
+  .ch-stage[data-state='RUNNING'] i { border-color:var(--ch-yellow); box-shadow:0 0 0 4px rgb(250 255 105 / .1); }
+  .ch-stage[data-state='COMPLETED'] i { border-color:#45c99a; background:#45c99a; }
+  .ch-stage[data-state='FAILED'] i { border-color:#ff6376; background:#ff6376; }
+  .ch-gpus { display:grid; grid-template-columns:repeat(auto-fill,minmax(13rem,1fr)); gap:.6rem; padding:.75rem; }
+  .ch-gpu { border:1px solid var(--ch-line); border-radius:5px; padding:.65rem; background:#141518; }
+  .ch-gpu>div,.ch-gpu p { display:flex; justify-content:space-between; gap:.5rem; }
+  .ch-gpu strong,.ch-gpu b { font-size:.72rem; }.ch-gpu b{color:var(--ch-yellow)}
+  .ch-gpu progress { width:100%; height:.28rem; margin:.55rem 0; accent-color:var(--ch-yellow); }
+  .ch-gpu p { margin:0; flex-wrap:wrap; color:var(--ch-muted); font-size:.63rem; }
+  .ch-live { color:#68e5b5; letter-spacing:.1em; }.ch-live.stale{color:#f2b75b}.ch-empty{padding:1rem;color:var(--ch-muted);font-size:.75rem}
+  .ch-terminal-panel { background:#090a0c; }
+  .ch-terminal-toolbar { background:#151619; }
+  .ch-window-dots { margin-right:.7rem; color:#ff665c; letter-spacing:.14rem; }.ch-window-dots::first-letter{color:#ff665c}
+  .ch-actions { display:flex; align-items:center; flex-wrap:wrap; gap:.45rem; }
+  .ch-actions button,.ch-actions select { border:1px solid #3c3f45; border-radius:4px; background:#202226; color:#eee; padding:.25rem .48rem; font-size:.68rem; }
+  .ch-actions label { display:flex; align-items:center; gap:.25rem; }
+  .ch-log-path { padding:.42rem .85rem; border-bottom:1px solid #24262b; color:#777c87; font: .65rem ui-monospace,SFMono-Regular,Menlo,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ch-log { height:26rem; margin:0; overflow:auto; padding:.85rem; background:#090a0c; color:#d7d9df; white-space:pre-wrap; overflow-wrap:anywhere; font: .72rem/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  @media(max-width:1100px){.ch-metrics{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:640px){.ch-run-header{padding:1rem}.ch-metrics{grid-template-columns:repeat(2,1fr)}.ch-panel{margin:.7rem}.ch-terminal-toolbar{align-items:flex-start;flex-direction:column}.ch-log{height:20rem}}
+}
+
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still

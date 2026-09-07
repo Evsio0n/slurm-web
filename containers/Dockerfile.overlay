@@ -1,0 +1,18 @@
+# Fast canary build over the exact deployed Slurm-web 7.0.0 images.
+# The regular containers/Dockerfile remains the reproducible release build.
+
+FROM ghcr.io/rackslab/slurm-web-agent@sha256:96a8c4762a8924e1c7cfe5a17a556e0085aca6c16e4a3c3e668a0eff27e4a59b AS agent
+USER root
+COPY slurmweb/apps/agent.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/agent.py
+COPY slurmweb/views/agent.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/agent.py
+COPY conf/vendor/agent.yml /usr/share/slurm-web/conf/agent.yml
+RUN python -m py_compile /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/agent.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/agent.py
+USER slurm-web
+
+FROM ghcr.io/rackslab/slurm-web-gateway@sha256:bfe36db2d60b2dd97ad5fbe59845d6b34a0732d06bd46748c6f954681ee27f2a AS gateway
+USER root
+COPY slurmweb/apps/gateway.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/gateway.py
+COPY slurmweb/views/gateway.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/gateway.py
+COPY frontend/dist/ /usr/share/slurm-web/frontend/
+RUN python -m py_compile /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/gateway.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/gateway.py
+USER slurm-web

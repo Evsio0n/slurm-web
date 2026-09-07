@@ -259,6 +259,18 @@ def job(cluster: str, job: int):
 
 @check_jwt
 @validate_cluster
+def job_log(cluster: str, job: int):
+    return proxy_agent(cluster, f"job/{job}/log", request.token)
+
+
+@check_jwt
+@validate_cluster
+def job_gpus(cluster: str, job: int):
+    return proxy_agent(cluster, f"job/{job}/gpus", request.token)
+
+
+@check_jwt
+@validate_cluster
 def nodes(cluster: str):
     return proxy_agent(cluster, "nodes", request.token)
 

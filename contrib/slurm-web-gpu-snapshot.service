@@ -1,0 +1,22 @@
+[Unit]
+Description=Slurm-web job-correlated NVIDIA GPU snapshot collector
+After=network-online.target remote-fs.target
+Wants=network-online.target remote-fs.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+Environment=SLURMWEB_GPU_SNAPSHOT_DIR=/mnt/ai-data/.slurm-web/gpu
+Environment=SLURMWEB_GPU_SNAPSHOT_INTERVAL=2
+ExecStart=/usr/bin/python3 /usr/local/sbin/slurm-web-gpu-snapshot
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/mnt/ai-data/.slurm-web/gpu
+
+[Install]
+WantedBy=multi-user.target

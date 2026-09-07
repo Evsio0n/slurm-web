@@ -24,6 +24,7 @@ import JobFieldExitCode from '@/components/job/JobFieldExitCode.vue'
 import JobResources from '@/components/job/JobResources.vue'
 import type { SlurmJobDetail } from '@/composables/gateway/slurm/types'
 import { jobAllocatedGPU, jobRequestedGPU } from '@/composables/gateway/slurm/job'
+import JobPipelineConsole from '@/components/job/JobPipelineConsole.vue'
 
 const { cluster, id } = defineProps<{ cluster: string; id: number }>()
 
@@ -217,6 +218,9 @@ onMounted(() => {
       Loading job {{ id }}
     </div>
     <div v-else-if="data">
+      <JobPipelineConsole :cluster="cluster" :id="id" :job="data" />
+      <details class="mt-8 rounded-md border border-gray-200 p-4 dark:border-gray-700">
+        <summary class="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-200">Job configuration</summary>
       <div class="flex justify-between">
         <div class="px-4 pb-8 sm:px-0">
           <h3 class="text-base leading-7 font-semibold text-gray-900 dark:text-gray-100">
@@ -281,6 +285,7 @@ onMounted(() => {
           </div>
         </div>
       </div>
+      </details>
     </div>
   </ClusterMainLayout>
 </template>
