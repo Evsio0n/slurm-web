@@ -79,7 +79,19 @@ class SlurmwebWebApp(SlurmwebGenericApp, Flask):
             if route.methods is not None:
                 kwargs["methods"] = route.methods
             if getattr(route, "websocket", False):
-                kwargs["websocket"] = True
+                # Werkzeug < 1.0 (eg. RHEL 8) has no websocket rules. Skip the
+                # route there: clients fall back to SSE and polling endpoints.
+                try:
+                    self.add_url_rule(
+                        route.endpoint, view_func=route.func, websocket=True, **kwargs
+                    )
+                except TypeError:
+                    logger.warning(
+                        "WebSocket routes are not supported by this Werkzeug version, "
+                        "skipping %s",
+                        route.endpoint,
+                    )
+                continue
             self.add_url_rule(route.endpoint, view_func=route.func, **kwargs)
         self.debug_flags = seed.debug_flags
 
