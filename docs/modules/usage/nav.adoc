@@ -1,3 +1,6 @@
+.Live checks
+* xref:live-checks.adoc[Live task checks]
+
 .Manpages
 * xref:manpages/slurm-web.adoc[`slurm-web`]
 * xref:manpages/slurm-web-gateway.adoc[`slurm-web-gateway`]
