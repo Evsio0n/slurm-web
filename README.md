@@ -10,6 +10,24 @@
 Status: running as a canary on a 14-node V100 cluster. The upstream README
 follows [below](#slurm-web).
 
+<p align="center">
+<img src="assets/screenshots/console/job-failure.png" alt="Failed job: pipeline header, failure summary with error excerpt, stages and live checks" width="900">
+</p>
+
+<p align="center">
+<img src="assets/screenshots/console/job-log.png" alt="CI-style job log with collapsible sections, ANSI colors, timestamps and search" width="900">
+</p>
+
+<details>
+<summary>More screenshots: dashboard, terminated jobs, a completed job, mobile</summary>
+<p align="center">
+<img src="assets/screenshots/console/dashboard.png" alt="Dashboard with queue, last 24 hours outcomes and recent failures" width="900"><br>
+<img src="assets/screenshots/console/jobs-terminated.png" alt="Terminated jobs with tabs, time range presets, search and worded resources" width="900"><br>
+<img src="assets/screenshots/console/job-pipeline.png" alt="Completed job with pipeline stages and live checks" width="900"><br>
+<img src="assets/screenshots/console/job-mobile.png" alt="Job page on a phone" width="300">
+</p>
+</details>
+
 ## What this fork adds
 
 **Pipeline job page.** Every job opens like a CI run: status, elapsed time
