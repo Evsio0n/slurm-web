@@ -22,6 +22,7 @@ import {
 import type { SlurmJob } from '@/composables/gateway/slurm/types'
 import ClusterMainLayout from '@/components/ClusterMainLayout.vue'
 import JobsSorter from '@/components/jobs/JobsSorter.vue'
+import JobsHeader from '@/components/jobs/JobsHeader.vue'
 import JobStatusBadge from '@/components/job/JobStatusBadge.vue'
 import JobsFiltersPanel from '@/components/jobs/JobsFiltersPanel.vue'
 import JobsFiltersBar from '@/components/jobs/JobsFiltersBar.vue'
@@ -30,7 +31,7 @@ import InfoAlert from '@/components/InfoAlert.vue'
 import ErrorAlert from '@/components/ErrorAlert.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/vue/20/solid'
-import { ArchiveBoxIcon, PlusIcon, WindowIcon } from '@heroicons/vue/24/outline'
+import { PlusIcon, WindowIcon } from '@heroicons/vue/24/outline'
 
 const { cluster } = defineProps<{ cluster: string }>()
 
@@ -88,24 +89,7 @@ onMounted(() => {
     <div>
       <JobsFiltersPanel :cluster="cluster" :nb-jobs="sortedJobs.length" />
 
-      <div class="mx-auto flex items-center justify-between">
-        <div class="px-4 py-16 sm:px-6 lg:px-8">
-          <h1 class="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
-            Jobs Active
-          </h1>
-          <p class="mt-4 max-w-xl text-sm font-light text-gray-600 dark:text-gray-300">
-            Active jobs in cluster queue
-          </p>
-        </div>
-
-        <div v-if="poller.loaded.value" class="mt-4 text-right text-gray-600 dark:text-gray-300">
-          <div class="text-5xl font-bold">{{ sortedJobs.length }}</div>
-          <div class="text-sm font-light">job{{ sortedJobs.length > 1 ? 's' : '' }} found</div>
-        </div>
-        <div v-else class="flex animate-pulse space-x-4">
-          <div class="h-14 w-14 rounded-2xl bg-slate-200 dark:bg-slate-800"></div>
-        </div>
-      </div>
+      <JobsHeader :cluster="cluster" mode="active" :count="sortedJobs.length" :loaded="poller.loaded.value" />
 
       <section aria-labelledby="filter-heading" class="-mx-4 -my-2 sm:-mx-6 lg:-mx-8">
         <h2 id="filter-heading" class="sr-only">Filters</h2>
@@ -115,15 +99,6 @@ onMounted(() => {
             <JobsSorter @sort="sortJobs" />
 
             <div class="flex flex-wrap items-center gap-2">
-              <RouterLink
-                v-if="runtimeStore.hasAnyPermission(['jobs-view-past', 'jobs-view-past-own'])"
-                data-testid="jobs-scope-toggle"
-                :to="{ name: 'jobs-past', params: { cluster } }"
-                class="inline-flex items-center gap-x-1.5 rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-600 dark:hover:bg-gray-700"
-              >
-                <ArchiveBoxIcon class="-ml-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-                Terminated
-              </RouterLink>
               <button
                 type="button"
                 class="bg-slurmweb dark:bg-slurmweb-verydark hover:bg-slurmweb-darker focus-visible:outline-slurmweb inline-flex items-center gap-x-1.5 rounded-md px-3 py-2 text-sm font-semibold text-white shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2"

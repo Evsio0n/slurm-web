@@ -9,23 +9,17 @@
 <script setup lang="ts">
 import type { SlurmJob } from '@/composables/gateway/slurm/types'
 import { jobResourcesGPU } from '@/composables/gateway/slurm/job'
-import { ServerIcon, CpuChipIcon, Square3Stack3DIcon } from '@heroicons/vue/24/outline'
 
 const { job } = defineProps<{ job: SlurmJob }>()
 const gpu = jobResourcesGPU(job)
+const nodes = job.node_count?.set ? job.node_count.number : 0
+const cpus = job.cpus?.set ? job.cpus.number : 0
 </script>
 <template>
-  <span class="mr-2 inline-flex">
-    <ServerIcon class="mr-0.5 h-5 w-5" aria-hidden="true" />
-    {{ job.node_count.number }}
-  </span>
-  <span class="mr-2 inline-flex">
-    <CpuChipIcon class="mr-0.5 h-5 w-5" aria-hidden="true" />
-    {{ job.cpus.number }}
-  </span>
-  <span v-if="gpu.count" class="inline-flex">
-    <Square3Stack3DIcon class="mr-0.5 h-5 w-5" aria-hidden="true" />
-    {{ gpu.count }}
-    <span v-if="!gpu.reliable" class="text-gray-400">~</span>
+  <span class="ch-resources">
+    <span :title="`${nodes} node${nodes > 1 ? 's' : ''}`"><b>{{ nodes }}</b> node{{ nodes > 1 ? 's' : '' }}</span>
+    <span><b>{{ cpus }}</b> CPU</span>
+    <span v-if="gpu.count" class="ch-resources-gpu" :title="gpu.reliable ? '' : 'estimated from per-node request'"><b>{{ gpu.count }}</b> GPU<template v-if="!gpu.reliable">~</template></span>
+    <span v-else class="ch-resources-none">no GPU</span>
   </span>
 </template>

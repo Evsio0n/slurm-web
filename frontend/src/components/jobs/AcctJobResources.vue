@@ -1,5 +1,5 @@
 <!--
-  Copyright (c) 2026 Rackslab
+  Copyright (c) 2025 Rackslab
 
   This file is part of Slurm-web.
 
@@ -13,7 +13,6 @@ import {
   acctJobCPUs,
   acctJobResources
 } from '@/composables/gateway/slurm/acctJob'
-import { ServerIcon, CpuChipIcon, Square3Stack3DIcon } from '@heroicons/vue/24/outline'
 
 const { job } = defineProps<{ job: SlurmAcctJob }>()
 const jobResources = acctJobResources(job)
@@ -22,16 +21,10 @@ const nodes = jobResources.node >= 0 ? jobResources.node : 0
 const jobCpus = acctJobCPUs(job)
 </script>
 <template>
-  <span class="mr-2 inline-flex">
-    <ServerIcon class="mr-0.5 h-5 w-5" aria-hidden="true" />
-    {{ nodes }}
-  </span>
-  <span class="mr-2 inline-flex">
-    <CpuChipIcon class="mr-0.5 h-5 w-5" aria-hidden="true" />
-    {{ jobCpus }}
-  </span>
-  <span v-if="gpu > 0" class="inline-flex">
-    <Square3Stack3DIcon class="mr-0.5 h-5 w-5" aria-hidden="true" />
-    {{ gpu }}
+  <span class="ch-resources">
+    <span><b>{{ nodes }}</b> node{{ nodes > 1 ? 's' : '' }}</span>
+    <span><b>{{ jobCpus }}</b> CPU</span>
+    <span v-if="gpu > 0" class="ch-resources-gpu"><b>{{ gpu }}</b> GPU</span>
+    <span v-else class="ch-resources-none">no GPU</span>
   </span>
 </template>

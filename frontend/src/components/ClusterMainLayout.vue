@@ -17,6 +17,7 @@ import { Bars3Icon, ArrowRightStartOnRectangleIcon, ServerStackIcon } from '@her
 import { ChevronRightIcon } from '@heroicons/vue/20/solid'
 import MainMenu from '@/components/MainMenu.vue'
 import ClustersPopOver from '@/components/ClustersPopOver.vue'
+import { useGatewayAPI } from '@/composables/GatewayAPI'
 
 type BreadcrumbPart = {
   title: string
@@ -34,9 +35,33 @@ const sidebarOpen = ref(false)
 const runtimeStore = useRuntimeStore()
 const runtimeConfiguration = useRuntimeConfiguration()
 const authStore = useAuthStore()
+const gateway = useGatewayAPI()
 
-onMounted(() => {
-  if (!runtimeStore.checkClusterAvailable(cluster)) {
+/*
+ * Deep links (a job URL pasted in a chat) land here before the clusters list
+ * was ever loaded. Fetch it once instead of declaring the cluster missing.
+ */
+async function ensureClusters() {
+  if (runtimeStore.checkClusterAvailable(cluster)) return true
+  try {
+    const clusters = await gateway.clusters()
+    runtimeStore.availableClusters = []
+    clusters.forEach((element) => {
+      element.error = false
+      runtimeStore.addCluster(element)
+    })
+    if (runtimeStore.checkClusterAvailable(cluster)) {
+      runtimeStore.currentCluster = runtimeStore.getCluster(cluster)
+      return true
+    }
+  } catch {
+    /* fall through: the cluster is reported as not found */
+  }
+  return false
+}
+
+onMounted(async () => {
+  if (!(await ensureClusters())) {
     clusterNotFound.value = true
   }
 })

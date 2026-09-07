@@ -5,7 +5,7 @@
  * on the GitLab and GitHub Actions job log panes.
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { LogModel, LogLine, LogSection, LogSegment } from '@/composables/logParser'
+import type { LogModel, LogSection, LogSegment } from '@/composables/logParser'
 import { sectionDuration } from '@/composables/logParser'
 
 export interface LogStreamTab {
@@ -41,6 +41,7 @@ const container = ref<HTMLElement>()
 const follow = ref(true)
 const wrap = ref(true)
 const showTimestamps = ref(true)
+const expanded = ref(false)
 const query = ref('')
 const matchIndex = ref(0)
 const activeLine = ref<number>()
@@ -293,6 +294,7 @@ defineExpose({ scrollToLine, scrollToSection, scrollToFirstError, scrollToLastEr
         <button type="button" title="Scroll to top" @click="scrollToTop">⤒</button>
         <button type="button" title="Scroll to bottom" @click="follow = true; scrollToBottom()">⤓</button>
         <button type="button" @click="emit('toggle-pause')">{{ paused ? 'Resume' : 'Pause' }}</button>
+        <button type="button" :data-on="expanded" title="Taller log pane" @click="expanded = !expanded">Expand</button>
         <button type="button" title="Download raw log" @click="emit('download')">Raw</button>
         <button type="button" @click="emit('clear')">Clear</button>
       </div>
@@ -301,7 +303,7 @@ defineExpose({ scrollToLine, scrollToSection, scrollToFirstError, scrollToLastEr
       <button type="button" class="ch-copy" title="Copy path" @click="copyPath">⧉</button>
       <span>{{ path }}</span>
     </div>
-    <div ref="container" class="ch-log" :data-wrap="wrap" @scroll.passive="onScroll">
+    <div ref="container" class="ch-log" :data-wrap="wrap" :data-expanded="expanded" @scroll.passive="onScroll">
       <button v-if="hiddenCount" type="button" class="ch-log-more" @click="windowSize += WINDOW">
         Show {{ Math.min(WINDOW, hiddenCount).toLocaleString() }} earlier lines ({{ hiddenCount.toLocaleString() }} hidden)
       </button>

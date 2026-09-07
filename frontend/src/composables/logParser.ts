@@ -101,11 +101,20 @@ function applySgr(state: SgrState, params: string): SgrState {
     else if (code === 2) next.dim = true
     else if (code === 3) next.italic = true
     else if (code === 4) next.underline = true
-    else if (code === 22) (next.bold = false), (next.dim = false)
+    else if (code === 22) {
+      next.bold = false
+      next.dim = false
+    }
     else if (code === 23) next.italic = false
     else if (code === 24) next.underline = false
-    else if (code === 39) (next.fg = undefined), (next.fgStyle = undefined)
-    else if (code === 49) (next.bg = undefined), (next.bgStyle = undefined)
+    else if (code === 39) {
+      next.fg = undefined
+      next.fgStyle = undefined
+    }
+    else if (code === 49) {
+      next.bg = undefined
+      next.bgStyle = undefined
+    }
     else if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
       next.fg = `a-fg-${code}`
       next.fgStyle = undefined
@@ -123,8 +132,13 @@ function applySgr(state: SgrState, params: string): SgrState {
         i += 4
       }
       if (color) {
-        if (target === 'fg') (next.fg = undefined), (next.fgStyle = `color:${color}`)
-        else (next.bg = undefined), (next.bgStyle = `background:${color}`)
+        if (target === 'fg') {
+          next.fg = undefined
+          next.fgStyle = `color:${color}`
+        } else {
+          next.bg = undefined
+          next.bgStyle = `background:${color}`
+        }
       }
     }
   }

@@ -12,6 +12,7 @@ import { useRuntimeStore } from '@/stores/runtime'
 import { useClusterDataPoller } from '@/composables/DataPoller'
 import ClusterMainLayout from '@/components/ClusterMainLayout.vue'
 import DashboardCharts from '@/components/dashboard/DashboardCharts.vue'
+import DashboardActivity from '@/components/dashboard/DashboardActivity.vue'
 import ErrorAlert from '@/components/ErrorAlert.vue'
 import { getMBHumanUnit } from '@/composables/gateway/slurm/sizes'
 import { type ClusterStats } from '@/composables/gateway/types/cluster'
@@ -139,6 +140,7 @@ watch(
         </div>
       </div>
       <DashboardCharts v-if="runtimeStore.getCluster(cluster).metrics" :cluster="cluster" />
+      <DashboardActivity :cluster="cluster" />
     </div>
   </ClusterMainLayout>
 </template>

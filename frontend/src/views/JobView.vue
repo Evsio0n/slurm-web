@@ -184,6 +184,12 @@ function highlightField(field: JobField) {
   }, 2000)
 }
 
+const TERMINAL = ['COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT', 'NODE_FAIL', 'OUT_OF_MEMORY', 'PREEMPTED', 'BOOT_FAIL', 'DEADLINE']
+/* Breadcrumb goes back to the list the job actually lives in. */
+const jobsRouteName = computed(() =>
+  data.value && data.value.state.current.some((state) => TERMINAL.includes(state)) ? 'jobs-past' : 'jobs'
+)
+
 watch(
   () => cluster,
   (new_cluster) => {
@@ -214,7 +220,7 @@ onMounted(() => {
   <ClusterMainLayout
     menu-entry="jobs"
     :cluster="cluster"
-    :breadcrumb="[{ title: 'Jobs', routeName: 'jobs' }, { title: `Job ${id}` }]"
+    :breadcrumb="[{ title: 'Jobs', routeName: jobsRouteName }, { title: `Job ${id}` }]"
   >
     <JobBackButton :cluster="cluster" />
     <ErrorAlert v-if="unable"
@@ -227,8 +233,8 @@ onMounted(() => {
     </div>
     <div v-else-if="data">
       <JobPipelineConsole :cluster="cluster" :id="id" :job="data" />
-      <details class="mt-8 rounded-md border border-gray-200 p-4 dark:border-gray-700">
-        <summary class="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-200">Job configuration</summary>
+      <details class="ch-details mt-4">
+        <summary>Job configuration<span>submit line, script, timeline, requested and allocated resources</span></summary>
       <div class="flex justify-between">
         <div class="px-4 pb-8 sm:px-0">
           <h3 class="text-base leading-7 font-semibold text-gray-900 dark:text-gray-100">
