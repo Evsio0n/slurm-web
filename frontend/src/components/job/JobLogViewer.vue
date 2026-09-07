@@ -22,6 +22,8 @@ const props = defineProps<{
   stream: 'stdout' | 'stderr'
   path: string
   live: boolean
+  /** Unix seconds when the job ended; freezes durations of sections left open. */
+  endedAt?: number
   paused: boolean
   transport: string
   transportState: string
@@ -101,7 +103,7 @@ function sectionMeta(name: string | undefined) {
   if (!name) return undefined
   const section = sectionByName.value.get(name)
   if (!section) return undefined
-  return { section, duration: duration(sectionDuration(section, now.value)) }
+  return { section, duration: duration(sectionDuration(section, props.endedAt ?? now.value)) }
 }
 
 /* Highlight search matches inside a line's segments. */
@@ -143,8 +145,9 @@ function scrollToTop() {
   if (el) el.scrollTop = 0
 }
 
-async function scrollToLine(n: number, highlight = true) {
+async function scrollToLine(n: number, highlight = true, reveal = false) {
   follow.value = false
+  if (reveal) container.value?.closest('section')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   if (n <= hiddenCount.value) windowSize.value = allLines.value.length - n + WINDOW
   const line = allLines.value[n - 1]
   if (line?.section && collapsed.value.has(line.section)) toggleSection(line.section)
@@ -161,7 +164,7 @@ async function scrollToLine(n: number, highlight = true) {
 function scrollToSection(name: string) {
   const section = sectionByName.value.get(name)
   if (!section) return false
-  void scrollToLine(section.firstLine, false)
+  void scrollToLine(section.firstLine, false, true)
   return true
 }
 

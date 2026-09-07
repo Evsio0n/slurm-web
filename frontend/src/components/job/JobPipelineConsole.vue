@@ -261,6 +261,8 @@ function appendLog(id: Stream, chunk: JobLogChunk & { merged?: boolean }) {
   }
   if (chunk.chunk) models[id].append(chunk.chunk)
   offsets.value[id] = chunk.next_offset
+  // A finished job never terminates its last line; render it now.
+  if (!isActive.value) models[id].flush()
   logVersion.value++
 }
 
@@ -408,7 +410,7 @@ function openExcerpt() {
   const excerpt = diagnostics.value?.excerpt
   if (!excerpt) return
   if (excerpt.stream !== stream.value && !(excerpt.stream === 'stderr' && merged.value)) stream.value = excerpt.stream
-  window.setTimeout(() => viewer.value?.scrollToLine(excerpt.line), 50)
+  window.setTimeout(() => viewer.value?.scrollToLine(excerpt.line, true, true), 50)
 }
 
 function openStage(stage: Stage) {
@@ -561,6 +563,7 @@ onUnmounted(() => {
       :stream="stream"
       :path="paths[stream] || (merged && stream === 'stderr' ? paths.stdout : '') || 'Output file is not available yet'"
       :live="isActive"
+      :ended-at="isActive ? undefined : (liveJob?.end || props.job.time.end || undefined)"
       :paused="paused"
       :transport="transport.label"
       :transport-state="transport.state"
