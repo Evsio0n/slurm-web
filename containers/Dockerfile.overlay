@@ -6,6 +6,8 @@ USER root
 COPY slurmweb/apps/agent.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/agent.py
 COPY slurmweb/views/agent.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/agent.py
 COPY conf/vendor/agent.yml /usr/share/slurm-web/conf/agent.yml
+COPY containers/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 RUN python -m py_compile /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/agent.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/agent.py
 USER slurm-web
 
@@ -14,5 +16,7 @@ USER root
 COPY slurmweb/apps/gateway.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/gateway.py
 COPY slurmweb/views/gateway.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/gateway.py
 COPY frontend/dist/ /usr/share/slurm-web/frontend/
+COPY containers/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
 RUN python -m py_compile /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/gateway.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/gateway.py
 USER slurm-web
