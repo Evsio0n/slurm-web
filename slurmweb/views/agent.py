@@ -354,7 +354,7 @@ def _raw_log_response(job: int, job_data, stream: str):
 
     return Response(
         generate(),
-        mimetype="text/plain; charset=utf-8",
+        mimetype="text/plain",
         headers={
             "Content-Disposition": f'attachment; filename="job-{job}-{stream}.log"',
             "Cache-Control": "no-cache, no-store",
@@ -378,9 +378,13 @@ def _error_excerpt(job_data, max_lines: int = 40, tail_bytes: int = 256 * 1024):
     that line plus what follows, so a Python traceback or a CUDA OOM message is
     shown in full. Line numbers are absolute so the UI can jump to them.
     """
+    stdout_path = _log_path(job_data, "stdout")
     for stream in ("stderr", "stdout"):
         path = _log_path(job_data, stream)
         if not path:
+            continue
+        if stream == "stderr" and path == stdout_path:
+            # Slurm merged stderr into stdout; report it under its real stream.
             continue
         try:
             output = _managed_job_log(path)
