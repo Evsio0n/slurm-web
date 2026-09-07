@@ -30,7 +30,12 @@ export interface JobLiveSocketOptions {
 }
 
 const MAX_BACKOFF_MS = 10_000
-/** Consecutive connections that never reached `ready` before giving up on WebSocket. */
+/**
+ * Consecutive connections that never reached `ready` before giving up on WebSocket.
+ * Only applies while the transport has never worked in this session: once a socket
+ * reached `ready`, WebSocket is known to be supported by the deployment and the
+ * client keeps reconnecting with backoff through maintenance windows instead.
+ */
 const FALLBACK_AFTER_FAILURES = 3
 
 /**
@@ -50,6 +55,7 @@ export function useJobLiveSocket(options: JobLiveSocketOptions) {
   let backoff = 1000
   let failures = 0
   let ready = false
+  let everReady = false
   let stopped = false
 
   function endpoint(): string {
@@ -79,7 +85,7 @@ export function useJobLiveSocket(options: JobLiveSocketOptions) {
   function scheduleReconnect() {
     if (stopped) return
     if (!ready) failures += 1
-    if (failures >= FALLBACK_AFTER_FAILURES) {
+    if (!everReady && failures >= FALLBACK_AFTER_FAILURES) {
       state.value = 'fallback'
       options.onFallback?.()
       return
@@ -120,6 +126,7 @@ export function useJobLiveSocket(options: JobLiveSocketOptions) {
       }
       if (message.type === 'ready') {
         ready = true
+        everReady = true
         failures = 0
         backoff = 1000
         state.value = 'live'
