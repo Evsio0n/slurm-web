@@ -15,12 +15,16 @@ import subprocess
 import time
 from pathlib import Path
 
-OUTPUT = Path(os.environ.get("SLURMWEB_GPU_SNAPSHOT_DIR", "/mnt/ai-data/.slurm-web/gpu"))
+OUTPUT = Path(
+    os.environ.get("SLURMWEB_GPU_SNAPSHOT_DIR", "/mnt/ai-data/.slurm-web/gpu")
+)
 INTERVAL = max(1.0, float(os.environ.get("SLURMWEB_GPU_SNAPSHOT_INTERVAL", "2")))
 
 
 def run(args):
-    return subprocess.run(args, text=True, capture_output=True, timeout=8, check=True).stdout
+    return subprocess.run(
+        args, text=True, capture_output=True, timeout=8, check=True
+    ).stdout
 
 
 def number(value):
@@ -34,7 +38,17 @@ def process_map():
     result = {}
     fields = "gpu_uuid,pid,process_name,used_memory"
     try:
-        rows = csv.reader(io.StringIO(run(["nvidia-smi", f"--query-compute-apps={fields}", "--format=csv,noheader,nounits"])))
+        rows = csv.reader(
+            io.StringIO(
+                run(
+                    [
+                        "nvidia-smi",
+                        f"--query-compute-apps={fields}",
+                        "--format=csv,noheader,nounits",
+                    ]
+                )
+            )
+        )
     except (subprocess.SubprocessError, FileNotFoundError):
         return result
     for row in rows:
@@ -49,30 +63,60 @@ def process_map():
                 job_id = match.group(1)
         except (OSError, ValueError):
             pass
-        result.setdefault(uuid, []).append({"pid": int(pid), "name": name, "memory_used_mb": number(memory), "job_id": job_id})
+        result.setdefault(uuid, []).append(
+            {
+                "pid": int(pid),
+                "name": name,
+                "memory_used_mb": number(memory),
+                "job_id": job_id,
+            }
+        )
     return result
 
 
 def snapshot():
     processes = process_map()
-    fields = "index,uuid,name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,power.limit"
-    rows = csv.reader(io.StringIO(run(["nvidia-smi", f"--query-gpu={fields}", "--format=csv,noheader,nounits"])))
+    fields = (
+        "index,uuid,name,utilization.gpu,utilization.memory,memory.used,"
+        "memory.total,temperature.gpu,power.draw,power.limit"
+    )
+    rows = csv.reader(
+        io.StringIO(
+            run(
+                ["nvidia-smi", f"--query-gpu={fields}", "--format=csv,noheader,nounits"]
+            )
+        )
+    )
     gpus = []
     for row in rows:
         if len(row) < 10:
             continue
         index, uuid, name = (part.strip() for part in row[:3])
         gpu_processes = processes.get(uuid, [])
-        gpus.append({
-            "index": int(index), "uuid": uuid, "name": name,
-            "utilization_gpu": number(row[3]), "utilization_memory": number(row[4]),
-            "memory_used_mb": number(row[5]), "memory_total_mb": number(row[6]),
-            "temperature": number(row[7]), "power_watts": number(row[8]),
-            "power_limit_watts": number(row[9]),
-            "job_ids": sorted({item["job_id"] for item in gpu_processes if item["job_id"]}),
-            "processes": gpu_processes,
-        })
-    return {"schema": 1, "node": socket.gethostname(), "timestamp": time.time(), "gpus": gpus}
+        gpus.append(
+            {
+                "index": int(index),
+                "uuid": uuid,
+                "name": name,
+                "utilization_gpu": number(row[3]),
+                "utilization_memory": number(row[4]),
+                "memory_used_mb": number(row[5]),
+                "memory_total_mb": number(row[6]),
+                "temperature": number(row[7]),
+                "power_watts": number(row[8]),
+                "power_limit_watts": number(row[9]),
+                "job_ids": sorted(
+                    {item["job_id"] for item in gpu_processes if item["job_id"]}
+                ),
+                "processes": gpu_processes,
+            }
+        )
+    return {
+        "schema": 1,
+        "node": socket.gethostname(),
+        "timestamp": time.time(),
+        "gpus": gpus,
+    }
 
 
 def main():

@@ -9,7 +9,7 @@ export default mergeConfig(
       environment: 'jsdom',
       exclude: [...configDefaults.exclude, 'e2e/**'],
       root: fileURLToPath(new URL('./', import.meta.url)),
-      setupFiles: ['tests/lib/vitest-canvas.ts'],
+      setupFiles: ['tests/lib/vitest-storage.ts', 'tests/lib/vitest-canvas.ts'],
     }
   })
 )

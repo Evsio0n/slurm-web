@@ -40,8 +40,12 @@ function acctSeconds(value: SlurmAcctJob['time']['end']): number {
   return 0
 }
 
+/* Pollers are mocked in tests and may hand back non-array payloads. */
+const activeJobs = computed<SlurmJob[]>(() => (Array.isArray(active.data.value) ? active.data.value : []))
+const pastJobs = computed<SlurmAcctJob[]>(() => (Array.isArray(past.data.value) ? past.data.value : []))
+
 const queue = computed(() => {
-  const jobs = active.data.value ?? []
+  const jobs = activeJobs.value
   const count = (state: string) => jobs.filter((job) => job.job_state.includes(state)).length
   const running = count('RUNNING')
   const pending = count('PENDING')
@@ -49,7 +53,7 @@ const queue = computed(() => {
 })
 
 const outcomes = computed(() => {
-  const jobs = past.data.value ?? []
+  const jobs = pastJobs.value
   const has = (job: SlurmAcctJob, states: string[]) => job.state.current.some((s) => states.includes(s))
   const failed = jobs.filter((job) => has(job, FAILURE_STATES)).length
   const cancelled = jobs.filter((job) => has(job, ['CANCELLED'])).length
@@ -59,21 +63,21 @@ const outcomes = computed(() => {
 })
 
 const recentFailures = computed(() =>
-  (past.data.value ?? [])
+  pastJobs.value
     .filter((job) => job.state.current.some((s) => FAILURE_STATES.includes(s)))
     .sort((a, b) => acctSeconds(b.time.end) - acctSeconds(a.time.end))
     .slice(0, 6)
 )
 
 const running = computed(() =>
-  (active.data.value ?? [])
+  activeJobs.value
     .filter((job) => job.job_state.includes('RUNNING'))
     .sort((a, b) => a.job_id - b.job_id)
     .slice(0, 8)
 )
 
 const pending = computed(() =>
-  (active.data.value ?? []).filter((job) => job.job_state.includes('PENDING')).slice(0, 5)
+  activeJobs.value.filter((job) => job.job_state.includes('PENDING')).slice(0, 5)
 )
 
 function ago(seconds: number): string {

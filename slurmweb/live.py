@@ -170,7 +170,9 @@ def finish_websocket(ws, error: LiveSessionError = None):
     """Send an optional error frame, close the socket and build the WSGI response."""
     if error is not None:
         try:
-            send_json(ws, {"type": "error", "code": error.code, "message": error.message})
+            send_json(
+                ws, {"type": "error", "code": error.code, "message": error.message}
+            )
         except (ConnectionClosed, OSError):
             pass
         close_websocket(ws, error.code, error.message[:120])

@@ -14,8 +14,8 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  AGENT_IMAGE: ghcr.io/rackslab/slurm-web-agent
-  GATEWAY_IMAGE: ghcr.io/rackslab/slurm-web-gateway
+  AGENT_IMAGE: ghcr.io/evsio0n/slurm-web-agent
+  GATEWAY_IMAGE: ghcr.io/evsio0n/slurm-web-gateway
 
 jobs:
   publish:

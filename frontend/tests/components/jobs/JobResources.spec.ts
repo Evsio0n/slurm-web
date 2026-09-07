@@ -14,11 +14,11 @@ describe('JobResources.vue', () => {
         job: job
       }
     })
-    const items = wrapper.findAll('span')
+    const items = wrapper.findAll('.ch-resources > span')
     expect(items.length).toBe(3)
-    expect(items[0].text()).toBe('4')
-    expect(items[1].text()).toBe('16')
-    expect(items[2].text()).toBe('2')
+    expect(items[0].text()).toBe('4 nodes')
+    expect(items[1].text()).toBe('16 CPU')
+    expect(items[2].text()).toBe('2 GPU')
   })
   test('job without gpus', () => {
     const job = { ...jobs[0] }
@@ -30,10 +30,12 @@ describe('JobResources.vue', () => {
         job: job
       }
     })
-    const items = wrapper.findAll('span')
-    expect(items.length).toBe(2)
-    expect(items[0].text()).toBe('2')
-    expect(items[1].text()).toBe('8')
+    const items = wrapper.findAll('.ch-resources > span')
+    expect(items.length).toBe(3)
+    expect(items[0].text()).toBe('2 nodes')
+    expect(items[1].text()).toBe('8 CPU')
+    expect(items[2].text()).toBe('no GPU')
+    expect(items[2].classes()).toContain('ch-resources-none')
   })
   test('job with gpus unreliable', () => {
     const job = { ...jobs[0] }
@@ -48,11 +50,11 @@ describe('JobResources.vue', () => {
         job: job
       }
     })
-    const items = wrapper.findAll('span')
-    expect(items.length).toBe(4)
-    expect(items[0].text()).toBe('4')
-    expect(items[1].text()).toBe('16')
-    expect(items[2].text()).toBe('16 ~')
-    expect(items[3].text()).toBe('~')
+    const items = wrapper.findAll('.ch-resources > span')
+    expect(items.length).toBe(3)
+    expect(items[0].text()).toBe('4 nodes')
+    expect(items[1].text()).toBe('16 CPU')
+    expect(items[2].text()).toBe('16 GPU~')
+    expect(items[2].attributes('title')).toContain('estimated')
   })
 })

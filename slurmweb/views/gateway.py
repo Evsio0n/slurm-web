@@ -11,7 +11,15 @@ import threading
 import urllib.request
 
 import jinja2
-from flask import Response, current_app, jsonify, request, abort, render_template, stream_with_context
+from flask import (
+    Response,
+    current_app,
+    jsonify,
+    request,
+    abort,
+    render_template,
+    stream_with_context,
+)
 import aiohttp
 from rfl.web.tokens import check_jwt
 from rfl.core.asyncio import asyncio_run
@@ -359,9 +367,13 @@ def job_live(cluster: str, job: int):
             except (ConnectionClosed, OSError):
                 pass
             finally:
-                close_websocket(ws, upstream.close_reason or 1000, upstream.close_message)
+                close_websocket(
+                    ws, upstream.close_reason or 1000, upstream.close_message
+                )
 
-        pump = threading.Thread(target=downstream, daemon=True, name=f"live-{cluster}-{job}")
+        pump = threading.Thread(
+            target=downstream, daemon=True, name=f"live-{cluster}-{job}"
+        )
         pump.start()
         # Browser -> agent on the request thread.
         while True:

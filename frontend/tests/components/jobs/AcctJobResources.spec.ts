@@ -40,23 +40,24 @@ describe('AcctJobResources.vue', () => {
     })
 
     const wrapper = mount(AcctJobResources, { props: { job } })
-    const items = wrapper.findAll('span.inline-flex')
+    const items = wrapper.findAll('.ch-resources > span')
 
     expect(items.length).toBe(3)
-    expect(items[0].text()).toBe('4')
-    expect(items[1].text()).toBe('16')
-    expect(items[2].text()).toBe('2')
+    expect(items[0].text()).toBe('4 nodes')
+    expect(items[1].text()).toBe('16 CPU')
+    expect(items[2].text()).toBe('2 GPU')
   })
 
   test('hides gpu span when no gpu is allocated', () => {
     const wrapper = mount(AcctJobResources, {
       props: { job: acctJobFixture() }
     })
-    const items = wrapper.findAll('span.inline-flex')
+    const items = wrapper.findAll('.ch-resources > span')
 
-    expect(items.length).toBe(2)
-    expect(items[0].text()).toBe('2')
-    expect(items[1].text()).toBe('8')
+    expect(items.length).toBe(3)
+    expect(items[0].text()).toBe('2 nodes')
+    expect(items[1].text()).toBe('8 CPU')
+    expect(items[2].text()).toBe('no GPU')
   })
 
   test('shows zero nodes when node TRES is missing', () => {
@@ -68,10 +69,10 @@ describe('AcctJobResources.vue', () => {
     })
 
     const wrapper = mount(AcctJobResources, { props: { job } })
-    const items = wrapper.findAll('span.inline-flex')
+    const items = wrapper.findAll('.ch-resources > span')
 
-    expect(items[0].text()).toBe('0')
-    expect(items[1].text()).toBe('4')
+    expect(items[0].text()).toBe('0 node')
+    expect(items[1].text()).toBe('4 CPU')
   })
 
   test('sums typed gpu gres entries', () => {
@@ -87,8 +88,8 @@ describe('AcctJobResources.vue', () => {
     })
 
     const wrapper = mount(AcctJobResources, { props: { job } })
-    const items = wrapper.findAll('span.inline-flex')
+    const items = wrapper.findAll('.ch-resources > span')
 
-    expect(items[2].text()).toBe('6')
+    expect(items[2].text()).toBe('6 GPU')
   })
 })

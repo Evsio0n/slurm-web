@@ -39,12 +39,15 @@ describe('DashboardView.vue', () => {
       },
       global: {
         stubs: {
-          DashboardCharts: true
+          DashboardCharts: true,
+          DashboardActivity: true
         }
       }
     })
     // Check presence of metrics and values.
-    expect(wrapper.findAll('p').map((element) => element.text())).toStrictEqual([
+    expect(
+      wrapper.findAll('.ch-dashboard-metrics p').map((element) => element.text())
+    ).toStrictEqual([
       'Nodes',
       'Cores',
       'Memory',

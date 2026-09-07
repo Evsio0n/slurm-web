@@ -249,7 +249,9 @@ def _gpu_root() -> Path:
 
 
 def _checks_root() -> Path:
-    return Path(os.environ.get("SLURMWEB_CHECKS_ROOT", "/mnt/ai-data/.slurm-web/checks"))
+    return Path(
+        os.environ.get("SLURMWEB_CHECKS_ROOT", "/mnt/ai-data/.slurm-web/checks")
+    )
 
 
 def _managed_job_log(path: str) -> Path:
@@ -470,11 +472,30 @@ def _job_diagnostics(job_data):
             "nodes": step.get("nodes", {}).get("range", ""),
         }
         for step in job_data.get("steps", []) or []
-        if any(state in ("FAILED", "CANCELLED", "OUT_OF_MEMORY", "TIMEOUT", "NODE_FAIL") for state in step.get("state", []))
+        if any(
+            state in ("FAILED", "CANCELLED", "OUT_OF_MEMORY", "TIMEOUT", "NODE_FAIL")
+            for state in step.get("state", [])
+        )
         or (step.get("exit_code", {}).get("return_code", {}).get("number") or 0) != 0
     ]
-    failed = any(state in ("FAILED", "OUT_OF_MEMORY", "TIMEOUT", "NODE_FAIL", "CANCELLED", "BOOT_FAIL", "DEADLINE", "PREEMPTED") for state in states)
-    nonzero = bool(exit_code and ((exit_code.get("return_code") or 0) != 0 or exit_code.get("signal")))
+    failed = any(
+        state
+        in (
+            "FAILED",
+            "OUT_OF_MEMORY",
+            "TIMEOUT",
+            "NODE_FAIL",
+            "CANCELLED",
+            "BOOT_FAIL",
+            "DEADLINE",
+            "PREEMPTED",
+        )
+        for state in states
+    )
+    nonzero = bool(
+        exit_code
+        and ((exit_code.get("return_code") or 0) != 0 or exit_code.get("signal"))
+    )
     if not (failed or nonzero or failed_steps):
         return None
     return {
@@ -506,25 +527,44 @@ def _gpu_telemetry(job: int, job_data):
             continue
         # Snapshot files carry exact node names. Keep all files when the Slurm hostlist
         # is compressed; process-level job correlation below remains authoritative.
-        if nodes and snapshot.get("node") not in nodes and "[" not in job_data.get("nodes", ""):
+        if (
+            nodes
+            and snapshot.get("node") not in nodes
+            and "[" not in job_data.get("nodes", "")
+        ):
             continue
-        snapshot["age_seconds"] = round(max(0, now - float(snapshot.get("timestamp", 0))), 1)
+        snapshot["age_seconds"] = round(
+            max(0, now - float(snapshot.get("timestamp", 0))), 1
+        )
         snapshot["stale"] = snapshot["age_seconds"] > 8
         snapshot["gpus"] = [
-            gpu for gpu in snapshot.get("gpus", []) if str(job) in gpu.get("job_ids", [])
+            gpu
+            for gpu in snapshot.get("gpus", [])
+            if str(job) in gpu.get("job_ids", [])
         ]
         if snapshot["gpus"] or not snapshot["stale"]:
             snapshots.append(snapshot)
-    gpus = [gpu for snapshot in snapshots if not snapshot["stale"] for gpu in snapshot["gpus"]]
+    gpus = [
+        gpu
+        for snapshot in snapshots
+        if not snapshot["stale"]
+        for gpu in snapshot["gpus"]
+    ]
     return {
         "nodes": snapshots,
         "summary": {
             "count": len(gpus),
-            "utilization": round(sum(gpu.get("utilization_gpu", 0) for gpu in gpus) / len(gpus), 1) if gpus else 0,
+            "utilization": round(
+                sum(gpu.get("utilization_gpu", 0) for gpu in gpus) / len(gpus), 1
+            )
+            if gpus
+            else 0,
             "memory_used_mb": sum(gpu.get("memory_used_mb", 0) for gpu in gpus),
             "memory_total_mb": sum(gpu.get("memory_total_mb", 0) for gpu in gpus),
             "power_watts": round(sum(gpu.get("power_watts", 0) for gpu in gpus), 1),
-            "temperature_max": max((gpu.get("temperature", 0) for gpu in gpus), default=0),
+            "temperature_max": max(
+                (gpu.get("temperature", 0) for gpu in gpus), default=0
+            ),
         },
     }
 
@@ -552,7 +592,9 @@ def _job_check_events(job: int):
                         event = json.loads(raw.decode("utf-8"))
                     except (UnicodeDecodeError, ValueError):
                         continue
-                    if event.get("job_id") != job or not isinstance(event.get("seq"), int):
+                    if event.get("job_id") != job or not isinstance(
+                        event.get("seq"), int
+                    ):
                         continue
                     events.append(event)
         except OSError:
@@ -573,7 +615,9 @@ def _checks_snapshot(job: int):
             continue
         timestamp = event.get("timestamp", "")
         try:
-            updated = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).timestamp()
+            updated = datetime.fromisoformat(
+                timestamp.replace("Z", "+00:00")
+            ).timestamp()
         except (ValueError, TypeError):
             continue
         if now - updated > 15:
@@ -613,12 +657,15 @@ def job_check_events(job: int):
         heartbeat = started
         yield "retry: 1000\n\n"
         while time.monotonic() - started < 30:
-            events = [event for event in _job_check_events(job) if event["seq"] > cursor]
+            events = [
+                event for event in _job_check_events(job) if event["seq"] > cursor
+            ]
             for event in events:
                 cursor = max(cursor, event["seq"])
-                yield f"id: {cursor}\nevent: check\ndata: {json.dumps(event, separators=(',', ':'))}\n\n"
+                data = json.dumps(event, separators=(",", ":"))
+                yield f"id: {cursor}\nevent: check\ndata: {data}\n\n"
             if time.monotonic() - heartbeat >= 10:
-                yield f"event: heartbeat\ndata: {{\"cursor\":{cursor}}}\n\n"
+                yield f'event: heartbeat\ndata: {{"cursor":{cursor}}}\n\n'
                 heartbeat = time.monotonic()
             time.sleep(0.5)
 
@@ -640,8 +687,12 @@ def _job_summary(job_data):
                 "name": step.get("step", {}).get("name"),
                 "state": step.get("state", []),
                 "elapsed": time_.get("elapsed", 0),
-                "start": time_.get("start", {}).get("number") if time_.get("start", {}).get("set") else None,
-                "end": time_.get("end", {}).get("number") if time_.get("end", {}).get("set") else None,
+                "start": time_.get("start", {}).get("number")
+                if time_.get("start", {}).get("set")
+                else None,
+                "end": time_.get("end", {}).get("number")
+                if time_.get("end", {}).get("set")
+                else None,
                 "exit_code": _exit_summary(step.get("exit_code")),
                 "nodes": step.get("nodes", {}).get("range", ""),
                 "node_count": step.get("nodes", {}).get("count", 0),
@@ -710,7 +761,9 @@ class JobLiveSession:
         self.last_sent = time.monotonic()
 
     def run(self):
-        self.send({"type": "ready", "job_id": self.job, "channels": list(LIVE_CHANNELS)})
+        self.send(
+            {"type": "ready", "job_id": self.job, "channels": list(LIVE_CHANNELS)}
+        )
         while True:
             tick = self.ACTIVE_TICK if _job_is_active(self.job_data) else self.IDLE_TICK
             message = receive_json(self.ws, tick)
@@ -744,7 +797,9 @@ class JobLiveSession:
 
     def subscribe(self, message):
         channels = message.get("channels") or list(LIVE_CHANNELS)
-        if not isinstance(channels, list) or any(ch not in LIVE_CHANNELS for ch in channels):
+        if not isinstance(channels, list) or any(
+            ch not in LIVE_CHANNELS for ch in channels
+        ):
             raise LiveSessionError(CLOSE_BAD_REQUEST, "unknown channel in subscribe")
         self.channels = set(channels)
         self.checks_cursor = _coerce_offset(message.get("checks_cursor", 0))
@@ -765,7 +820,10 @@ class JobLiveSession:
                 "channels": sorted(self.channels),
                 "cursors": {
                     "checks": self.checks_cursor,
-                    "log": {name: state["offset"] for name, state in self.log_streams.items()},
+                    "log": {
+                        name: state["offset"]
+                        for name, state in self.log_streams.items()
+                    },
                 },
             }
         )
@@ -786,14 +844,27 @@ class JobLiveSession:
             self.push_gpu()
             self.next_gpu = now + self.GPU_INTERVAL
         if time.monotonic() - self.last_sent >= self.HEARTBEAT_INTERVAL:
-            self.send({"type": "heartbeat", "ts": time.time(), "cursor": self.checks_cursor})
+            self.send(
+                {"type": "heartbeat", "ts": time.time(), "cursor": self.checks_cursor}
+            )
 
     def refresh_job(self):
         try:
             self.job_data = slurmrest("job", self.job)
         except HTTPException as err:
-            self.send({"type": "error", "code": err.code, "message": err.description, "transient": True})
-        interval = self.JOB_ACTIVE_INTERVAL if _job_is_active(self.job_data) else self.JOB_IDLE_INTERVAL
+            self.send(
+                {
+                    "type": "error",
+                    "code": err.code,
+                    "message": err.description,
+                    "transient": True,
+                }
+            )
+        interval = (
+            self.JOB_ACTIVE_INTERVAL
+            if _job_is_active(self.job_data)
+            else self.JOB_IDLE_INTERVAL
+        )
         self.next_job = time.monotonic() + interval
         if "job" in self.channels:
             self.push_job()
@@ -813,37 +884,67 @@ class JobLiveSession:
 
     @staticmethod
     def _log_streams_from(message):
-        """Accept ``{"streams": {"stdout": 0, "stderr": 0}}`` or legacy ``stream``/``offset``."""
+        """Accept ``{"streams": {...}}`` or the legacy ``stream``/``offset`` pair."""
         streams = message.get("streams")
         if streams is None:
             stream = message.get("stream", "stdout")
             streams = {stream: message.get("offset", 0)}
         if not isinstance(streams, dict) or not streams:
-            raise LiveSessionError(CLOSE_BAD_REQUEST, "log.streams must map stream names to offsets")
+            raise LiveSessionError(
+                CLOSE_BAD_REQUEST, "log.streams must map stream names to offsets"
+            )
         parsed = {}
         for name, offset in streams.items():
             if name not in ("stdout", "stderr"):
-                raise LiveSessionError(CLOSE_BAD_REQUEST, "stream must be stdout or stderr")
+                raise LiveSessionError(
+                    CLOSE_BAD_REQUEST, "stream must be stdout or stderr"
+                )
             parsed[name] = {"offset": _coerce_offset(offset), "path": None}
         return parsed
 
     def push_log(self):
         stdout_path = _log_path(self.job_data, "stdout")
         for name, state in self.log_streams.items():
-            if name == "stderr" and stdout_path and _log_path(self.job_data, "stderr") == stdout_path:
+            if (
+                name == "stderr"
+                and stdout_path
+                and _log_path(self.job_data, "stderr") == stdout_path
+            ):
                 # Slurm merges stderr into stdout unless --error is given. Say so once
                 # instead of streaming the same file twice.
                 if state["path"] != "merged":
                     state["path"] = "merged"
-                    self.send({"type": "log", "stream": name, "path": stdout_path, "chunk": "", "offset": 0, "next_offset": 0, "waiting": False, "merged": True})
+                    self.send(
+                        {
+                            "type": "log",
+                            "stream": name,
+                            "path": stdout_path,
+                            "chunk": "",
+                            "offset": 0,
+                            "next_offset": 0,
+                            "waiting": False,
+                            "merged": True,
+                        }
+                    )
                 continue
             try:
-                chunk = _read_log_chunk(self.job_data, name, state["offset"], self.LOG_LIMIT)
+                chunk = _read_log_chunk(
+                    self.job_data, name, state["offset"], self.LOG_LIMIT
+                )
             except HTTPException as err:
-                self.send({"type": "error", "code": err.code, "message": err.description, "transient": True})
+                self.send(
+                    {
+                        "type": "error",
+                        "code": err.code,
+                        "message": err.description,
+                        "transient": True,
+                    }
+                )
                 self.log_paused = True
                 return
-            changed = chunk["chunk"] or chunk.get("rotated") or chunk["path"] != state["path"]
+            changed = (
+                chunk["chunk"] or chunk.get("rotated") or chunk["path"] != state["path"]
+            )
             if not changed:
                 continue
             state["path"] = chunk["path"]
@@ -882,7 +983,9 @@ def job_live(job: int):
         try:
             job_data = _authorized_job(job)
         except HTTPException as err:
-            code = {403: CLOSE_FORBIDDEN, 404: CLOSE_NOT_FOUND}.get(err.code, CLOSE_INTERNAL)
+            code = {403: CLOSE_FORBIDDEN, 404: CLOSE_NOT_FOUND}.get(
+                err.code, CLOSE_INTERNAL
+            )
             raise LiveSessionError(code, err.description)
         JobLiveSession(ws, job, job_data).run()
     except ConnectionClosed:

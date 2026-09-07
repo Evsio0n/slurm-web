@@ -34,12 +34,14 @@ const runtimeStore = useRuntimeStore()
 
 <template>
   <div class="ch-jobs-header">
+    <h1 class="sr-only">Jobs {{ mode === 'active' ? 'Active' : 'Terminated' }}</h1>
     <div class="ch-jobs-tabs" role="tablist">
       <RouterLink
         v-if="runtimeStore.hasAnyPermission(['jobs-view', 'jobs-view-own'])"
         :to="{ name: 'jobs', params: { cluster } }"
         class="ch-jobs-tab"
         :data-active="mode === 'active'"
+        :data-testid="mode === 'past' ? 'jobs-scope-toggle' : undefined"
         role="tab"
         >Active</RouterLink
       >
@@ -48,6 +50,7 @@ const runtimeStore = useRuntimeStore()
         :to="{ name: 'jobs-past', params: { cluster } }"
         class="ch-jobs-tab"
         :data-active="mode === 'past'"
+        :data-testid="mode === 'active' ? 'jobs-scope-toggle' : undefined"
         role="tab"
         >Terminated</RouterLink
       >

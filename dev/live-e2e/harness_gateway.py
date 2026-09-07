@@ -1,4 +1,5 @@
 """Minimal gateway-like Flask app exposing the fork's live relay for gunicorn E2E."""
+
 import os
 from pathlib import Path
 
@@ -22,4 +23,6 @@ class Agent:
 
 
 app.agents = {"test": Agent()}
-app.add_url_rule("/api/agents/<cluster>/job/<int:job>/live", view_func=views.job_live, websocket=True)
+app.add_url_rule(
+    "/api/agents/<cluster>/job/<int:job>/live", view_func=views.job_live, websocket=True
+)

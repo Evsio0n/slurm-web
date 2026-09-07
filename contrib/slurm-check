@@ -20,7 +20,9 @@ def identity(args):
     if task is None:
         task = os.environ.get("SLURM_PROCID", "0")
     if not str(job).isdigit() or not str(task).isdigit():
-        raise SystemExit("job and task must be numeric (or set SLURM_JOB_ID/SLURM_PROCID)")
+        raise SystemExit(
+            "job and task must be numeric (or set SLURM_JOB_ID/SLURM_PROCID)"
+        )
     if not all(ch.isalnum() or ch in "._-" for ch in str(step)):
         raise SystemExit("step contains unsupported characters")
     return str(job), str(step), str(task)
@@ -28,7 +30,10 @@ def identity(args):
 
 def emit(args):
     job, step, task = identity(args)
-    root = Path(args.root or os.environ.get("SLURMWEB_CHECKS_DIR", "/mnt/ai-data/.slurm-web/checks"))
+    root = Path(
+        args.root
+        or os.environ.get("SLURMWEB_CHECKS_DIR", "/mnt/ai-data/.slurm-web/checks")
+    )
     directory = root / job / step
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"task-{int(task):04d}.jsonl"
@@ -36,13 +41,16 @@ def emit(args):
     event = {
         "schema": 1,
         "seq": now_ns,
-        "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "timestamp": datetime.now(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z"),
         "job_id": int(job),
         "step_id": step,
         "task_id": int(task),
         "node": args.node or os.environ.get("SLURMD_NODENAME") or socket.gethostname(),
         "check_id": args.check_id,
-        "title": args.title or args.check_id.replace("-", " ").replace("_", " ").title(),
+        "title": args.title
+        or args.check_id.replace("-", " ").replace("_", " ").title(),
         "state": args.state,
         "message": args.message or "",
         "progress": args.progress,
@@ -78,7 +86,9 @@ def section(argv):
     if args.action == "start":
         options = "[collapsed=true]" if args.collapsed else ""
         title = args.title or args.name.replace("-", " ").replace("_", " ").title()
-        sys.stdout.write(f"\x1b[0Ksection_start:{stamp}:{args.name}{options}\r\x1b[0K{title}\n")
+        sys.stdout.write(
+            f"\x1b[0Ksection_start:{stamp}:{args.name}{options}\r\x1b[0K{title}\n"
+        )
     else:
         sys.stdout.write(f"\x1b[0Ksection_end:{stamp}:{args.name}\r\x1b[0K")
     sys.stdout.flush()
@@ -103,7 +113,9 @@ def main():
     parser.add_argument("--task", type=int)
     parser.add_argument("--node")
     parser.add_argument("--root")
-    parser.add_argument("--print-event", action="store_true", help="also print the event JSON to stdout")
+    parser.add_argument(
+        "--print-event", action="store_true", help="also print the event JSON to stdout"
+    )
     args = parser.parse_args()
     for metric in args.metric:
         if "=" not in metric:
