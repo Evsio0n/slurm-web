@@ -35,6 +35,23 @@ This avoids concurrent append operations from multiple compute nodes. Supported 
 are `queued`, `running`, `passed`, `failed`, `warning`, `skipped` and `cancelled`.
 Running checks without an update for 15 seconds are rendered as `stalled`.
 
+== Log sections and failure summary
+
+The job output pane renders like a CI job log: numbered lines, ANSI colors,
+search, follow, stdout/stderr tabs and collapsible sections. Sections use the
+GitLab marker format, so `slurm-check section start NAME [TITLE]` and
+`slurm-check section end NAME` fold a phase of the task and show its duration;
+GitHub `::group::` / `::endgroup::` markers are recognised as well. Pipeline
+stages whose name matches a section jump to it.
+
+When a job ends in failure, the agent extracts an error excerpt from the tail of
+stderr (or stdout when Slurm merged the streams): the last `Traceback`, CUDA out of
+memory, `srun: error` or similar line and what follows. It is exposed as
+`GET /api/agents/<cluster>/job/<job>/diagnostics` together with the exit code,
+derived exit code, signal and failed steps, and pushed on the live `job` channel.
+`GET /api/agents/<cluster>/job/<job>/log?stream=stdout&raw=1` downloads the whole
+output file.
+
 == Live WebSocket
 
 The job workbench opens a single WebSocket:
@@ -60,10 +77,11 @@ directions. The agent owns the session:
 
 * `checks`: a `checks` snapshot on subscribe, then one `check` frame per new event.
   Events resume from `checks_cursor` (the event sequence number).
-* `log`: `log` frames carry only new bytes from the requested `offset`. Send
-  `{"type": "log", "stream": "stderr", "offset": 0}` to switch stream and
-  `{"type": "pause"|"resume", "channel": "log"}` to hold the stream without losing
-  the offset.
+* `log`: subscribe with `"log": {"streams": {"stdout": 0, "stderr": 0}}` (one
+  byte offset per stream; the legacy `stream`/`offset` pair is still accepted).
+  `log` frames carry only new bytes per stream, `merged: true` says Slurm wrote
+  stderr into stdout, and `{"type": "pause"|"resume", "channel": "log"}` holds
+  the stream without losing offsets.
 * `gpu`: the latest per-GPU telemetry every two seconds, only when it changed.
   Nothing is buffered, so a slow client never receives a backlog of stale frames.
 * `job`: state, elapsed time, nodes and steps, only when they changed.
