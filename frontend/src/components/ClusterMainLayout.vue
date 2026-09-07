@@ -44,13 +44,13 @@ onMounted(() => {
 
 <template>
   <MainMenu :entry="menuEntry" v-model="sidebarOpen" />
-  <div class="lg:pl-72">
+  <div class="ch-app-shell lg:pl-60">
     <div
-      class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-gray-200 bg-white shadow-xs sm:gap-x-6 lg:px-4 dark:border-gray-700 dark:bg-gray-900"
+      class="ch-topbar sticky top-0 z-40 flex h-13 shrink-0 items-center gap-x-4 sm:gap-x-6 lg:px-4"
     >
       <button
         type="button"
-        class="-m-2.5 p-2.5 text-gray-700 lg:hidden dark:text-gray-300"
+        class="-m-2.5 p-2.5 text-gray-300 lg:hidden"
         @click="sidebarOpen = true"
       >
         <span class="sr-only">Open sidebar</span>
@@ -58,7 +58,7 @@ onMounted(() => {
       </button>
 
       <!-- Separator -->
-      <div class="h-6 w-px bg-gray-900/10 lg:hidden" aria-hidden="true" />
+      <div class="h-6 w-px bg-white/10 lg:hidden" aria-hidden="true" />
 
       <div class="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
         <div class="relative mt-1 flex flex-1 items-center">
@@ -68,10 +68,10 @@ onMounted(() => {
             <router-link
               v-if="breadcrumbPart.routeName"
               :to="{ name: breadcrumbPart.routeName }"
-              class="text-black dark:text-gray-200"
+              class="ch-breadcrumb-link"
               >{{ breadcrumbPart.title }}</router-link
             >
-            <span v-else class="text-black dark:text-gray-200">{{ breadcrumbPart.title }}</span>
+            <span v-else class="ch-breadcrumb-current">{{ breadcrumbPart.title }}</span>
           </span>
         </div>
         <div class="flex items-center gap-x-4 lg:gap-x-6">
@@ -88,7 +88,7 @@ onMounted(() => {
           </RouterLink>
 
           <!-- Separator -->
-          <div class="hidden lg:block lg:h-6 lg:w-px lg:bg-gray-900/10" aria-hidden="true" />
+          <div class="hidden lg:block lg:h-6 lg:w-px lg:bg-white/10" aria-hidden="true" />
 
           <!-- Profile -->
           <span v-if="runtimeConfiguration.authentication" class="hidden lg:flex lg:items-center">
@@ -119,8 +119,8 @@ onMounted(() => {
       </div>
     </div>
 
-    <main class="py-10">
-      <div class="px-4 sm:px-6 lg:px-8">
+    <main class="ch-main py-7">
+      <div class="px-4 sm:px-6 lg:px-7">
         <div v-if="clusterNotFound">Cluster not found</div>
         <div v-else class="home">
           <slot></slot>

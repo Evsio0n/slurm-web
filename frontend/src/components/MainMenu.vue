@@ -19,11 +19,9 @@ import {
   XMarkIcon,
   UserGroupIcon
 } from '@heroicons/vue/24/outline'
-import { TagIcon } from '@heroicons/vue/16/solid'
 
 import { useRuntimeStore } from '@/stores/runtime'
 import { useRuntimeConfiguration } from '@/plugins/runtimeConfiguration'
-import { useBranding } from '@/composables/Branding'
 
 const { entry } = defineProps<{
   entry: string
@@ -33,7 +31,6 @@ const sidebarOpen = defineModel<boolean>()
 
 const runtimeStore = useRuntimeStore()
 const runtimeConfiguration = useRuntimeConfiguration()
-const { logoAlt, logoHorizontal, logoHorizontalDark } = useBranding()
 const navigation: Array<{
   name: string
   route: string
@@ -108,17 +105,10 @@ const navigation: Array<{
             </TransitionChild>
 
             <!-- Sidebar component -->
-            <div
-              class="bg-slurmweb flex grow flex-col gap-y-5 overflow-y-auto px-6 pb-4 dark:bg-gray-700"
-            >
-              <div class="flex h-16 shrink-0 items-center justify-center">
-                <img class="flex h-12" :src="logoHorizontal" :alt="logoAlt" />
-              </div>
-              <div
-                class="text-slurmweb-dark dark:text-slurmweb mx-8 -mt-10 mb-6 text-right text-xs"
-              >
-                <TagIcon class="inline size-3" aria-hidden="true" />
-                {{ runtimeConfiguration.version }}
+            <div class="ch-sidebar flex grow flex-col gap-y-5 overflow-y-auto px-3 pb-4">
+              <div class="ch-brand flex h-16 shrink-0 items-center gap-3 px-2">
+                <span class="ch-brand-mark">S</span>
+                <span><b>Slurm Web</b><small>ENGINEER CONSOLE · {{ runtimeConfiguration.version }}</small></span>
               </div>
               <nav class="flex flex-1 flex-col">
                 <ul role="list" class="flex flex-1 flex-col gap-y-7">
@@ -130,9 +120,9 @@ const navigation: Array<{
                           :to="{ name: item.route }"
                           :class="[
                             item.route == entry
-                              ? 'bg-slurmweb-dark dark:bg-slurmweb-verydark text-white'
-                              : 'text-slurmweb-font-disabled dark:text-slurmweb-font-disabled/80 hover:text-white',
-                            'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
+                              ? 'ch-nav-active'
+                              : 'ch-nav-idle',
+                            'ch-nav-item group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
                           ]"
                           @click="sidebarOpen = false"
                         >
@@ -140,8 +130,8 @@ const navigation: Array<{
                             :is="item.icon"
                             :class="[
                               item.route == entry
-                                ? 'text-white'
-                                : 'text-slurmweb-font-disabled group-hover:text-white',
+                                ? 'text-[#faff69]'
+                                : 'text-gray-400 group-hover:text-gray-100',
                               'h-6 w-6 shrink-0'
                             ]"
                             aria-hidden="true"
@@ -154,7 +144,7 @@ const navigation: Array<{
                   <li class="mt-auto">
                     <RouterLink
                       :to="{ name: 'settings' }"
-                      class="text-slurmweb-light hover:bg-slurmweb-dark hover:dark:bg-slurmweb-verydark group -mx-2 flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold hover:text-white"
+                      class="ch-nav-item ch-nav-idle group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
                     >
                       <Cog6ToothIcon
                         class="text-slurmweb-font-disabled h-6 w-6 shrink-0 group-hover:text-white"
@@ -173,15 +163,12 @@ const navigation: Array<{
   </TransitionRoot>
 
   <!-- Static sidebar for desktop -->
-  <div class="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col">
+  <div class="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-60 lg:flex-col">
     <!-- Sidebar component, swap this element with another sidebar if you like -->
-    <div class="bg-slurmweb flex grow flex-col gap-y-5 overflow-y-auto px-6 pb-4 dark:bg-gray-700">
-      <div class="flex h-24 shrink-0 items-center">
-        <img :src="logoHorizontal" :alt="logoAlt" class="block dark:hidden" />
-        <img :src="logoHorizontalDark" :alt="logoAlt" class="hidden dark:block" />
-      </div>
-      <div class="text-slurmweb-dark dark:text-slurmweb -mt-12 mb-4 text-right text-xs">
-        <TagIcon class="inline size-3" aria-hidden="true" /> {{ runtimeConfiguration.version }}
+    <div class="ch-sidebar flex grow flex-col gap-y-5 overflow-y-auto px-3 pb-4">
+      <div class="ch-brand flex h-17 shrink-0 items-center gap-3 px-2">
+        <span class="ch-brand-mark">S</span>
+        <span><b>Slurm Web</b><small>ENGINEER CONSOLE · {{ runtimeConfiguration.version }}</small></span>
       </div>
       <nav class="flex flex-1 flex-col">
         <ul role="list" class="flex flex-1 flex-col gap-y-7">
@@ -193,9 +180,9 @@ const navigation: Array<{
                   :to="{ name: item.route }"
                   :class="[
                     item.route == entry
-                      ? 'bg-slurmweb-dark dark:bg-slurmweb-verydark text-white'
-                      : 'hover:slurmweb-dark text-slurmweb-font-disabled dark:text-slurmweb-font-disabled/80 hover:text-white',
-                    'group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
+                      ? 'ch-nav-active'
+                      : 'ch-nav-idle',
+                    'ch-nav-item group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold'
                   ]"
                 >
                   <component :is="item.icon" :class="['h-6 w-6 shrink-0']" aria-hidden="true" />
@@ -207,7 +194,7 @@ const navigation: Array<{
           <li class="mt-auto">
             <RouterLink
               :to="{ name: 'settings' }"
-              class="text-slurmweb-light hover:bg-slurmweb-dark hover:dark:bg-slurmweb-verydark group -mx-2 flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold hover:text-white"
+              class="ch-nav-item ch-nav-idle group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
             >
               <Cog6ToothIcon class="h-6 w-6 shrink-0" aria-hidden="true" />
               Settings

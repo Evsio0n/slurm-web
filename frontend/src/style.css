@@ -11,12 +11,12 @@
 @plugin '@tailwindcss/forms';
 
 @theme {
-  --color-slurmweb-light: #ccdbe6;
-  --color-slurmweb: #759ab8;
-  --color-slurmweb-darker: #6185a3;
-  --color-slurmweb-dark: #486a86;
-  --color-slurmweb-verydark: #3b5163;
-  --color-slurmweb-font-disabled: #dbe9f4;
+  --color-slurmweb-light: #faff69;
+  --color-slurmweb: #e9ed45;
+  --color-slurmweb-darker: #d0d52f;
+  --color-slurmweb-dark: #2a2c19;
+  --color-slurmweb-verydark: #202216;
+  --color-slurmweb-font-disabled: #b5b8c0;
 
   --animate-horizontal-shake: horizontal-shaking 0.35s infinite;
 
@@ -92,6 +92,10 @@
   color utility to any element that depends on these defaults.
 */
 @layer base {
+  html { background:#0d0e10; }
+  body { background:#0d0e10; color:#f4f4f5; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  ::selection { background:rgb(250 255 105 / .28); color:#fff; }
+  :focus-visible { outline:2px solid #faff69; outline-offset:2px; }
   *,
   ::after,
   ::before,
@@ -99,4 +103,42 @@
   ::file-selector-button {
     border-color: var(--color-gray-200, currentcolor);
   }
+}
+
+@layer components {
+  .ch-app-shell { min-height:100vh; background:#0f1012; }
+  .ch-main { min-height:calc(100vh - 3.25rem); background:radial-gradient(circle at 70% -15%,rgb(250 255 105 / .035),transparent 32rem),#0f1012; }
+  .ch-topbar { border-bottom:1px solid #2d2f34; background:rgb(20 21 24 / .96); box-shadow:0 1px 0 rgb(255 255 255 / .02); backdrop-filter:blur(12px); }
+  .ch-breadcrumb-link { color:#a4a7ae; font-size:.78rem; font-weight:550; }
+  .ch-breadcrumb-link:hover { color:#faff69; }
+  .ch-breadcrumb-current { color:#f5f5f5; font-size:.78rem; font-weight:650; }
+  .ch-sidebar { border-right:1px solid #2d2f34; background:#151619; }
+  .ch-brand { border-bottom:1px solid #2b2d31; }
+  .ch-brand-mark { display:grid; place-items:center; width:2rem; height:2rem; flex:none; border-radius:5px; background:#faff69; color:#111214; font-weight:850; box-shadow:0 0 18px rgb(250 255 105 / .12); }
+  .ch-brand b,.ch-brand small { display:block; }
+  .ch-brand b { font-size:.82rem; letter-spacing:.01em; }
+  .ch-brand small { margin-top:.12rem; color:#777b84; font-size:.52rem; letter-spacing:.08em; white-space:nowrap; }
+  .ch-nav-item { position:relative; border:1px solid transparent; color:#aeb1b8; transition:background-color .12s,border-color .12s,color .12s; }
+  .ch-nav-idle:hover { border-color:#303238; background:#1c1e22; color:#fff; }
+  .ch-nav-active { border-color:#42452f; background:#282a1b; color:#fff; }
+  .ch-nav-active::before { content:''; position:absolute; left:-.8rem; top:.35rem; bottom:.35rem; width:2px; border-radius:2px; background:#faff69; }
+
+  /* Normalize upstream pages into the same compact ClickHouse workbench shell. */
+  .home h1,.home h2,.home h3 { color:#f4f4f5; letter-spacing:-.015em; }
+  .home .py-16 { padding-top:2rem; padding-bottom:2rem; }
+  .home table { overflow:hidden; border:1px solid #303238; border-radius:7px; background:#16171a; border-collapse:separate; border-spacing:0; }
+  .home thead { background:#1c1e22; }
+  .home thead th { color:#aeb1b8!important; font-size:.68rem!important; font-weight:650!important; letter-spacing:.055em; text-transform:uppercase; border-bottom:1px solid #34363c; }
+  .home tbody { color:#c8cad0!important; }
+  .home tbody tr { transition:background-color .1s; }
+  .home tbody tr:hover { background:#1d1f23; }
+  .home tbody td { border-color:#292b30!important; font-variant-numeric:tabular-nums; }
+  .home input,.home select,.home textarea { border-color:#3b3d43!important; border-radius:4px!important; background:#1a1c20!important; color:#f5f5f5!important; box-shadow:none!important; }
+  .home button,.home a[role='button'] { transition:background-color .12s,border-color .12s,color .12s; }
+  .home button.bg-slurmweb,.home a.bg-slurmweb { background:#faff69!important; color:#151619!important; box-shadow:none!important; }
+  .home button.bg-slurmweb:hover,.home a.bg-slurmweb:hover { background:#e8ed50!important; }
+  .home .bg-white { background:#18191c!important; }
+  .home .dark\:bg-gray-800,.home .dark\:bg-gray-700 { background:#18191c!important; }
+  .home .ring-gray-300,.home .dark\:ring-gray-600 { --tw-ring-color:#3b3d43!important; }
+  .home .rounded-3xl,.home .rounded-2xl { border-radius:8px!important; }
 }
