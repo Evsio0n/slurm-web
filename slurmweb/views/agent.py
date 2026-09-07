@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 import time
 
-from flask import Response, current_app, jsonify, abort, request
+from flask import Response, current_app, jsonify, abort, request, stream_with_context
 from rfl.web.tokens import rbac_action, check_jwt
 
 from ..version import get_version
@@ -303,6 +303,99 @@ def job_gpus(job: int):
                 "temperature_max": max((gpu.get("temperature", 0) for gpu in gpus), default=0),
             },
         }
+    )
+
+
+def _job_check_events(job: int):
+    root = Path("/mnt/ai-data/.slurm-web/checks") / str(job)
+    events = []
+    if not root.is_dir():
+        return events
+    for path in sorted(root.glob("*/task-*.jsonl")):
+        try:
+            # Keep a runaway task from forcing unbounded API reads.
+            with path.open("rb") as stream:
+                stream.seek(max(0, path.stat().st_size - 2_000_000))
+                if stream.tell():
+                    stream.readline()
+                for raw in stream:
+                    try:
+                        event = json.loads(raw.decode("utf-8"))
+                    except (UnicodeDecodeError, ValueError):
+                        continue
+                    if event.get("job_id") != job or not isinstance(event.get("seq"), int):
+                        continue
+                    events.append(event)
+        except OSError:
+            continue
+    events.sort(key=lambda event: event["seq"])
+    return events[-10000:]
+
+
+def _checks_snapshot(job: int):
+    events = _job_check_events(job)
+    latest = {}
+    for event in events:
+        key = (event.get("step_id"), event.get("task_id"), event.get("check_id"))
+        latest[key] = dict(event)
+    now = time.time()
+    for event in latest.values():
+        if event.get("state") != "running":
+            continue
+        timestamp = event.get("timestamp", "")
+        try:
+            updated = __import__("datetime").datetime.fromisoformat(
+                timestamp.replace("Z", "+00:00")
+            ).timestamp()
+        except (ValueError, TypeError):
+            continue
+        if now - updated > 15:
+            event["state"] = "stalled"
+            event["stale_seconds"] = round(now - updated, 1)
+    checks = sorted(latest.values(), key=lambda event: event["seq"])
+    return {
+        "job_id": job,
+        "cursor": max((event["seq"] for event in events), default=0),
+        "generated_at": now,
+        "checks": checks,
+    }
+
+
+@check_jwt
+def job_checks(job: int):
+    _authorized_job(job)
+    return jsonify(_checks_snapshot(job))
+
+
+@check_jwt
+def job_check_events(job: int):
+    """Stream structured task check events with resumable sequence cursors."""
+    _authorized_job(job)
+    try:
+        cursor = max(0, int(request.args.get("cursor", 0)))
+    except ValueError:
+        abort(400, "cursor must be an integer")
+
+    @stream_with_context
+    def generate():
+        nonlocal cursor
+        started = time.monotonic()
+        heartbeat = started
+        yield "retry: 1000\n\n"
+        while time.monotonic() - started < 30:
+            events = [event for event in _job_check_events(job) if event["seq"] > cursor]
+            for event in events:
+                cursor = max(cursor, event["seq"])
+                yield f"id: {cursor}\nevent: check\ndata: {json.dumps(event, separators=(',', ':'))}\n\n"
+            if time.monotonic() - heartbeat >= 10:
+                yield f"event: heartbeat\ndata: {{\"cursor\":{cursor}}}\n\n"
+                heartbeat = time.monotonic()
+            time.sleep(0.5)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"},
     )
 
 

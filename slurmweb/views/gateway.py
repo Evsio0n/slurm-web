@@ -7,9 +7,10 @@
 import logging
 from functools import wraps
 import asyncio
+import urllib.request
 
 import jinja2
-from flask import Response, current_app, jsonify, request, abort, render_template
+from flask import Response, current_app, jsonify, request, abort, render_template, stream_with_context
 import aiohttp
 from rfl.web.tokens import check_jwt
 from rfl.core.asyncio import asyncio_run
@@ -267,6 +268,41 @@ def job_log(cluster: str, job: int):
 @validate_cluster
 def job_gpus(cluster: str, job: int):
     return proxy_agent(cluster, f"job/{job}/gpus", request.token)
+
+
+@check_jwt
+@validate_cluster
+def job_checks(cluster: str, job: int):
+    return proxy_agent(cluster, f"job/{job}/checks", request.token)
+
+
+@check_jwt
+@validate_cluster
+def job_check_events(cluster: str, job: int):
+    """Stream agent SSE without buffering it in the gateway."""
+    agent = current_app.agents[cluster]
+    query = request.query_string.decode()
+    url = f"{agent.url}/v{agent.version}/job/{job}/checks/events"
+    if query:
+        url += f"?{query}"
+    upstream = urllib.request.Request(
+        url, headers={"Authorization": f"Bearer {request.token}"}
+    )
+
+    @stream_with_context
+    def generate():
+        with urllib.request.urlopen(upstream, timeout=40) as response:
+            while True:
+                line = response.readline()
+                if not line:
+                    break
+                yield line
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @check_jwt

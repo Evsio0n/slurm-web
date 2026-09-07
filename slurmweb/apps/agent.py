@@ -44,6 +44,10 @@ class SlurmwebAppAgent(SlurmwebWebApp, RFLTokenizedRBACWebApp):
         SlurmwebAppRoute(f"/v{get_version()}/job/<int:job>", views.job),
         SlurmwebAppRoute(f"/v{get_version()}/job/<int:job>/log", views.job_log),
         SlurmwebAppRoute(f"/v{get_version()}/job/<int:job>/gpus", views.job_gpus),
+        SlurmwebAppRoute(f"/v{get_version()}/job/<int:job>/checks", views.job_checks),
+        SlurmwebAppRoute(
+            f"/v{get_version()}/job/<int:job>/checks/events", views.job_check_events
+        ),
         SlurmwebAppRoute(f"/v{get_version()}/nodes", views.nodes),
         SlurmwebAppRoute(f"/v{get_version()}/node/<name>", views.node),
         SlurmwebAppRoute(f"/v{get_version()}/partitions", views.partitions),

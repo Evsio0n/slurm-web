@@ -141,6 +141,11 @@ class SlurmwebAppGateway(SlurmwebWebApp, RFLTokenizedWebApp):
         SlurmwebAppRoute("/api/agents/<cluster>/job/<int:job>", views.job),
         SlurmwebAppRoute("/api/agents/<cluster>/job/<int:job>/log", views.job_log),
         SlurmwebAppRoute("/api/agents/<cluster>/job/<int:job>/gpus", views.job_gpus),
+        SlurmwebAppRoute("/api/agents/<cluster>/job/<int:job>/checks", views.job_checks),
+        SlurmwebAppRoute(
+            "/api/agents/<cluster>/job/<int:job>/checks/events",
+            views.job_check_events,
+        ),
         SlurmwebAppRoute("/api/agents/<cluster>/nodes", views.nodes),
         SlurmwebAppRoute("/api/agents/<cluster>/node/<name>", views.node),
         SlurmwebAppRoute("/api/agents/<cluster>/partitions", views.partitions),

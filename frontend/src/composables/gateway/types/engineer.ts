@@ -49,3 +49,40 @@ export interface JobGpuTelemetry {
     temperature_max: number
   }
 }
+
+export type JobCheckState =
+  | 'queued'
+  | 'running'
+  | 'passed'
+  | 'failed'
+  | 'warning'
+  | 'skipped'
+  | 'cancelled'
+  | 'stalled'
+
+export interface JobCheckEvent {
+  schema: number
+  seq: number
+  timestamp: string
+  job_id: number
+  step_id: string
+  task_id: number
+  node: string
+  check_id: string
+  title: string
+  state: JobCheckState
+  message: string
+  progress?: number
+  current?: number
+  total?: number
+  duration_ms?: number
+  metrics: Record<string, string | number>
+  stale_seconds?: number
+}
+
+export interface JobChecksSnapshot {
+  job_id: number
+  cursor: number
+  generated_at: number
+  checks: JobCheckEvent[]
+}

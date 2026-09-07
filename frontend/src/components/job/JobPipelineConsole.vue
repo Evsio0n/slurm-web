@@ -5,9 +5,15 @@ import type { JobGpuTelemetry } from '@/composables/gateway/types/engineer'
 import { useGatewayAPI } from '@/composables/GatewayAPI'
 import { extractSlurmTRESResources } from '@/composables/gateway/slurm/tres'
 import { jobAllocatedGPU } from '@/composables/gateway/slurm/job'
+import { fetchEventSource } from '@microsoft/fetch-event-source'
+import { useHttp } from '@/plugins/http'
+import { useAuthStore } from '@/stores/auth'
+import type { JobCheckEvent } from '@/composables/gateway/types/engineer'
 
 const props = defineProps<{ cluster: string; id: number; job: SlurmJobDetail }>()
 const gateway = useGatewayAPI()
+const http = useHttp()
+const auth = useAuthStore()
 const output = ref('')
 const outputPath = ref('Waiting for output path…')
 const offset = ref(0)
@@ -17,6 +23,10 @@ const follow = ref(true)
 const logElement = ref<HTMLElement>()
 const gpu = ref<JobGpuTelemetry>()
 const logError = ref('')
+const checks = ref<JobCheckEvent[]>([])
+const checksCursor = ref(0)
+const checksConnection = ref<'connecting' | 'live' | 'reconnecting'>('connecting')
+let checksController = new AbortController()
 let logTimer = -1
 let gpuTimer = -1
 
@@ -33,6 +43,15 @@ const gpuHours = computed(() => (allocatedGpu.value * elapsed.value) / 3600)
 const cpuHours = computed(() => ((resources.value.cpu || 0) * elapsed.value) / 3600)
 const status = computed(() => props.job.state.current[0] || 'UNKNOWN')
 const allGpus = computed(() => gpu.value?.nodes.flatMap((node) => node.gpus.map((device) => ({ node, device }))) || [])
+const checkGroups = computed(() => {
+  const groups = new Map<string, { step: string; task: number; node: string; checks: JobCheckEvent[] }>()
+  for (const check of checks.value) {
+    const key = `${check.step_id}:${check.task_id}`
+    if (!groups.has(key)) groups.set(key, { step: check.step_id, task: check.task_id, node: check.node, checks: [] })
+    groups.get(key)?.checks.push(check)
+  }
+  return [...groups.values()]
+})
 
 function duration(value: number) {
   const seconds = Math.max(0, Math.floor(value))
@@ -59,6 +78,71 @@ function stepPeakMemory(step: SlurmJobStep): string {
   const entry = step.tres?.requested?.max?.find((item) => item.type === 'mem')
   if (!entry?.count) return ''
   return `${number(entry.count / 1024 ** 3, 1)} GiB peak`
+}
+
+function checkIcon(check: JobCheckEvent) {
+  if (check.state === 'passed') return '✓'
+  if (check.state === 'failed' || check.state === 'cancelled') return '×'
+  if (check.state === 'warning' || check.state === 'stalled') return '!'
+  if (check.state === 'skipped') return '–'
+  return '●'
+}
+
+function checkProgress(check: JobCheckEvent) {
+  if (check.progress !== undefined && check.progress !== null) return check.progress
+  if (check.current !== undefined && check.total) return (check.current / check.total) * 100
+  return undefined
+}
+
+function upsertCheck(event: JobCheckEvent) {
+  const index = checks.value.findIndex(
+    (item) => item.step_id === event.step_id && item.task_id === event.task_id && item.check_id === event.check_id
+  )
+  if (index === -1) checks.value.push(event)
+  else checks.value[index] = event
+  checks.value.sort((a, b) => a.seq - b.seq)
+  checksCursor.value = Math.max(checksCursor.value, event.seq)
+}
+
+async function loadChecks() {
+  const snapshot = await gateway.jobChecks(props.cluster, props.id)
+  checks.value = snapshot.checks
+  checksCursor.value = snapshot.cursor
+}
+
+async function startChecks() {
+  checksController.abort()
+  checksController = new AbortController()
+  checksConnection.value = 'connecting'
+  try {
+    await loadChecks()
+    const base = http.defaults.baseURL || '/api/'
+    await fetchEventSource(
+      `${base}agents/${encodeURIComponent(props.cluster)}/job/${props.id}/checks/events?cursor=${checksCursor.value}`,
+      {
+        headers: { Authorization: `Bearer ${auth.token}` },
+        signal: checksController.signal,
+        openWhenHidden: true,
+        onopen: async (response) => {
+          if (!response.ok) throw new Error(`Checks stream HTTP ${response.status}`)
+          checksConnection.value = 'live'
+        },
+        onmessage: (message) => {
+          if (message.event === 'check' && message.data) upsertCheck(JSON.parse(message.data) as JobCheckEvent)
+        },
+        onclose: () => {
+          checksConnection.value = 'reconnecting'
+          throw new Error('Checks stream closed')
+        },
+        onerror: () => {
+          checksConnection.value = 'reconnecting'
+          return 1000
+        }
+      }
+    )
+  } catch (error) {
+    if (!checksController.signal.aborted) checksConnection.value = 'reconnecting'
+  }
 }
 
 async function pollLog() {
@@ -101,10 +185,12 @@ function resetLog() {
 
 watch(stream, resetLog)
 watch(() => props.id, resetLog)
+watch(() => props.id, startChecks)
 
 onMounted(() => {
   void pollLog()
   void pollGpu()
+  void startChecks()
   logTimer = window.setInterval(pollLog, 1000)
   gpuTimer = window.setInterval(pollGpu, 2000)
 })
@@ -113,6 +199,7 @@ onUnmounted(() => {
   window.clearInterval(logTimer)
   window.clearInterval(gpuTimer)
   gateway.abort()
+  checksController.abort()
 })
 </script>
 
@@ -146,6 +233,21 @@ onUnmounted(() => {
           <i></i><strong>{{ stepName(step) }}</strong><span>{{ stepStatus(step) }} · {{ duration(step.time.elapsed) }}</span><small>{{ stepPeakMemory(step) }}</small>
         </div>
       </div>
+    </section>
+
+    <section class="ch-panel ch-checks-panel">
+      <header><strong>Live checks</strong><span class="ch-check-connection" :data-state="checksConnection">{{ checksConnection.toUpperCase() }}</span></header>
+      <div v-if="checkGroups.length" class="ch-check-groups">
+        <article v-for="group in checkGroups" :key="`${group.step}-${group.task}`" class="ch-check-group">
+          <header><strong>Task {{ group.task }}</strong><span>{{ group.node }} · step {{ group.step }}</span></header>
+          <div v-for="check in group.checks" :key="check.check_id" class="ch-check" :data-state="check.state">
+            <i>{{ checkIcon(check) }}</i>
+            <div><strong>{{ check.title }}</strong><span>{{ check.message || check.state }}</span><progress v-if="checkProgress(check) !== undefined" :value="checkProgress(check)" max="100"></progress></div>
+            <time>{{ check.duration_ms ? duration(check.duration_ms / 1000) : check.progress !== undefined ? `${number(check.progress)}%` : check.state }}</time>
+          </div>
+        </article>
+      </div>
+      <p v-else class="ch-empty">No structured checks emitted yet. Raw pipeline output remains live.</p>
     </section>
 
     <section class="ch-panel">
