@@ -20,6 +20,8 @@ $ slurm-check passed load-model "Load model" --duration-ms 31042 \
 The command reads `SLURM_JOB_ID`, `SLURM_STEP_ID`, `SLURM_PROCID` and
 `SLURMD_NODENAME`. These values can also be specified explicitly with `--job`,
 `--step`, `--task` and `--node` for testing.
+Events are silent on standard output so task logs remain clean. Use `--print-event` for
+CLI debugging.
 
 Each task writes its own append-only JSONL file:
 

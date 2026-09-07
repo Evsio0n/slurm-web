@@ -56,7 +56,8 @@ def emit(args):
         stream.write(encoded)
         stream.flush()
         os.fsync(stream.fileno())
-    print(json.dumps({"event": event, "path": str(path)}, separators=(",", ":")))
+    if args.print_event:
+        print(json.dumps({"event": event, "path": str(path)}, separators=(",", ":")))
 
 
 def main():
@@ -75,6 +76,7 @@ def main():
     parser.add_argument("--task", type=int)
     parser.add_argument("--node")
     parser.add_argument("--root")
+    parser.add_argument("--print-event", action="store_true", help="also print the event JSON to stdout")
     args = parser.parse_args()
     for metric in args.metric:
         if "=" not in metric:
