@@ -78,6 +78,8 @@ class SlurmwebWebApp(SlurmwebGenericApp, Flask):
             kwargs = dict()
             if route.methods is not None:
                 kwargs["methods"] = route.methods
+            if getattr(route, "websocket", False):
+                kwargs["websocket"] = True
             self.add_url_rule(route.endpoint, view_func=route.func, **kwargs)
         self.debug_flags = seed.debug_flags
 

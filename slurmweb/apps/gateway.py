@@ -146,6 +146,9 @@ class SlurmwebAppGateway(SlurmwebWebApp, RFLTokenizedWebApp):
             "/api/agents/<cluster>/job/<int:job>/checks/events",
             views.job_check_events,
         ),
+        SlurmwebAppRoute(
+            "/api/agents/<cluster>/job/<int:job>/live", views.job_live, websocket=True
+        ),
         SlurmwebAppRoute("/api/agents/<cluster>/nodes", views.nodes),
         SlurmwebAppRoute("/api/agents/<cluster>/node/<name>", views.node),
         SlurmwebAppRoute("/api/agents/<cluster>/partitions", views.partitions),

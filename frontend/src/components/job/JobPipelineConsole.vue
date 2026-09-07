@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { SlurmJobDetail, SlurmJobStep } from '@/composables/gateway/slurm/types'
-import type { JobGpuTelemetry } from '@/composables/gateway/types/engineer'
+import type {
+  JobCheckEvent,
+  JobGpuTelemetry,
+  JobLiveJobSummary,
+  JobLiveServerMessage,
+  JobLogChunk
+} from '@/composables/gateway/types/engineer'
 import { useGatewayAPI } from '@/composables/GatewayAPI'
+import { useJobLiveSocket } from '@/composables/useJobLiveSocket'
 import { extractSlurmTRESResources } from '@/composables/gateway/slurm/tres'
 import { jobAllocatedGPU } from '@/composables/gateway/slurm/job'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { useHttp } from '@/plugins/http'
 import { useAuthStore } from '@/stores/auth'
-import type { JobCheckEvent } from '@/composables/gateway/types/engineer'
 
 const props = defineProps<{ cluster: string; id: number; job: SlurmJobDetail }>()
 const gateway = useGatewayAPI()
@@ -25,16 +31,45 @@ const gpu = ref<JobGpuTelemetry>()
 const logError = ref('')
 const checks = ref<JobCheckEvent[]>([])
 const checksCursor = ref(0)
-const checksConnection = ref<'connecting' | 'live' | 'reconnecting'>('connecting')
 const checksClock = ref(Date.now())
-let checksController = new AbortController()
+const liveJob = ref<JobLiveJobSummary>()
+const lastMessageAt = ref(0)
+let checksClockTimer = -1
+
+/*
+ * Transport. One multiplexed WebSocket carries checks, log, gpu and job state.
+ * When the socket cannot be established (proxy without upgrade support, old
+ * agent) the console falls back to the previous REST polling + SSE path.
+ */
+const fallback = ref(false)
+let fallbackChecksController = new AbortController()
 let logTimer = -1
 let gpuTimer = -1
-let checksClockTimer = -1
+
+const live = useJobLiveSocket({
+  cluster: props.cluster,
+  jobId: () => props.id,
+  cursors: () => ({
+    checks: checksCursor.value,
+    log: { stream: stream.value, offset: offset.value }
+  }),
+  onMessage: handleLiveMessage,
+  onFallback: startFallback
+})
+
+const transport = computed(() => {
+  if (fallback.value) return { label: 'SSE · POLLING', state: 'fallback' }
+  if (live.state.value === 'live') return { label: 'WS · LIVE', state: 'live' }
+  if (live.state.value === 'reconnecting') return { label: 'WS · RECONNECTING', state: 'reconnecting' }
+  if (live.state.value === 'closed') return { label: 'WS · CLOSED', state: 'reconnecting' }
+  return { label: 'WS · CONNECTING', state: 'connecting' }
+})
 
 const resources = computed(() => extractSlurmTRESResources(props.job.tres.allocated))
 const allocatedGpu = computed(() => jobAllocatedGPU(props.job))
-const elapsed = computed(() => props.job.time.elapsed || 0)
+/* Live job summary wins over the slower detail poller so counters tick in real time. */
+const elapsed = computed(() => liveJob.value?.elapsed ?? props.job.time.elapsed ?? 0)
+const status = computed(() => liveJob.value?.state[0] || props.job.state.current[0] || 'UNKNOWN')
 const limitSeconds = computed(() =>
   props.job.time.limit?.set && !props.job.time.limit.infinite ? props.job.time.limit.number * 60 : 0
 )
@@ -43,7 +78,6 @@ const progress = computed(() =>
 )
 const gpuHours = computed(() => (allocatedGpu.value * elapsed.value) / 3600)
 const cpuHours = computed(() => ((resources.value.cpu || 0) * elapsed.value) / 3600)
-const status = computed(() => props.job.state.current[0] || 'UNKNOWN')
 const allGpus = computed(() => gpu.value?.nodes.flatMap((node) => node.gpus.map((device) => ({ node, device }))) || [])
 const checkGroups = computed(() => {
   const groups = new Map<string, { step: string; task: number; node: string; checks: JobCheckEvent[] }>()
@@ -53,6 +87,24 @@ const checkGroups = computed(() => {
     groups.get(key)?.checks.push(check)
   }
   return [...groups.values()]
+})
+const stages = computed(() => {
+  if (liveJob.value?.steps.length) {
+    return liveJob.value.steps.map((step) => ({
+      id: step.id || 'batch',
+      name: step.name || step.id || 'batch',
+      state: step.state[0] || 'UNKNOWN',
+      elapsed: step.elapsed,
+      peak: ''
+    }))
+  }
+  return props.job.steps.map((step) => ({
+    id: step.step.id,
+    name: stepName(step),
+    state: stepStatus(step),
+    elapsed: step.time.elapsed,
+    peak: stepPeakMemory(step)
+  }))
 })
 
 function duration(value: number) {
@@ -113,16 +165,62 @@ function upsertCheck(event: JobCheckEvent) {
   checksCursor.value = Math.max(checksCursor.value, event.seq)
 }
 
+async function appendLog(chunk: JobLogChunk) {
+  outputPath.value = chunk.path || 'Output file is not available yet'
+  logError.value = ''
+  if (chunk.rotated) {
+    offset.value = 0
+    output.value = '[output rotated]\n'
+  }
+  if (chunk.chunk) {
+    output.value += chunk.chunk
+    if (output.value.length > 2_000_000) output.value = output.value.slice(-1_500_000)
+  }
+  offset.value = chunk.next_offset
+  if (chunk.chunk && follow.value) {
+    await nextTick()
+    if (logElement.value) logElement.value.scrollTop = logElement.value.scrollHeight
+  }
+}
+
+function handleLiveMessage(message: JobLiveServerMessage) {
+  lastMessageAt.value = Date.now()
+  switch (message.type) {
+    case 'checks':
+      checks.value = message.checks
+      checksCursor.value = Math.max(checksCursor.value, message.cursor)
+      break
+    case 'check':
+      upsertCheck(message.event)
+      break
+    case 'log':
+      if (message.stream === stream.value) void appendLog(message)
+      break
+    case 'gpu':
+      gpu.value = { nodes: message.nodes, summary: message.summary }
+      break
+    case 'job':
+      liveJob.value = message
+      break
+    case 'error':
+      if (!message.transient) logError.value = message.message
+      break
+    default:
+      break
+  }
+}
+
+/* Fallback transport: previous REST polling and SSE, only started when WebSocket gave up. */
+
 async function loadChecks() {
   const snapshot = await gateway.jobChecks(props.cluster, props.id)
   checks.value = snapshot.checks
   checksCursor.value = snapshot.cursor
 }
 
-async function startChecks() {
-  checksController.abort()
-  checksController = new AbortController()
-  checksConnection.value = 'connecting'
+async function startFallbackChecks() {
+  fallbackChecksController.abort()
+  fallbackChecksController = new AbortController()
   try {
     await loadChecks()
     const base = http.defaults.baseURL || '/api/'
@@ -130,27 +228,22 @@ async function startChecks() {
       `${base}agents/${encodeURIComponent(props.cluster)}/job/${props.id}/checks/events?cursor=${checksCursor.value}`,
       {
         headers: { Authorization: `Bearer ${auth.token}` },
-        signal: checksController.signal,
+        signal: fallbackChecksController.signal,
         openWhenHidden: true,
         onopen: async (response) => {
           if (!response.ok) throw new Error(`Checks stream HTTP ${response.status}`)
-          checksConnection.value = 'live'
         },
         onmessage: (message) => {
           if (message.event === 'check' && message.data) upsertCheck(JSON.parse(message.data) as JobCheckEvent)
         },
         onclose: () => {
-          checksConnection.value = 'reconnecting'
           throw new Error('Checks stream closed')
         },
-        onerror: () => {
-          checksConnection.value = 'reconnecting'
-          return 1000
-        }
+        onerror: () => 1000
       }
     )
-  } catch (error) {
-    if (!checksController.signal.aborted) checksConnection.value = 'reconnecting'
+  } catch {
+    /* fetchEventSource retries on its own until aborted */
   }
 }
 
@@ -158,21 +251,7 @@ async function pollLog() {
   if (paused.value) return
   try {
     const chunk = await gateway.jobLog(props.cluster, props.id, stream.value, offset.value)
-    outputPath.value = chunk.path || 'Output file is not available yet'
-    logError.value = ''
-    if (chunk.rotated) {
-      offset.value = 0
-      output.value = '[output rotated]\n'
-    }
-    if (chunk.chunk) {
-      output.value += chunk.chunk
-      offset.value = chunk.next_offset
-      if (output.value.length > 2_000_000) output.value = output.value.slice(-1_500_000)
-      if (follow.value) {
-        await nextTick()
-        if (logElement.value) logElement.value.scrollTop = logElement.value.scrollHeight
-      }
-    }
+    await appendLog(chunk)
   } catch (error) {
     logError.value = error instanceof Error ? error.message : String(error)
   }
@@ -186,31 +265,71 @@ async function pollGpu() {
   }
 }
 
-function resetLog() {
-  offset.value = 0
-  output.value = ''
-  void pollLog()
-}
-
-watch(stream, resetLog)
-watch(() => props.id, resetLog)
-watch(() => props.id, startChecks)
-
-onMounted(() => {
+function startFallback() {
+  if (fallback.value) return
+  fallback.value = true
   void pollLog()
   void pollGpu()
-  void startChecks()
+  void startFallbackChecks()
   logTimer = window.setInterval(pollLog, 1000)
   gpuTimer = window.setInterval(pollGpu, 2000)
+}
+
+function stopFallback() {
+  window.clearInterval(logTimer)
+  window.clearInterval(gpuTimer)
+  fallbackChecksController.abort()
+}
+
+/* User controls */
+
+function switchStream() {
+  offset.value = 0
+  output.value = ''
+  paused.value = false
+  if (fallback.value) void pollLog()
+  else live.send({ type: 'log', stream: stream.value, offset: 0 })
+}
+
+function togglePause() {
+  paused.value = !paused.value
+  if (!fallback.value) live.send({ type: paused.value ? 'pause' : 'resume', channel: 'log' })
+}
+
+function clearView() {
+  /* Only the view is cleared; the byte offset is kept so nothing is re-downloaded. */
+  output.value = ''
+}
+
+function resetForNewJob() {
+  offset.value = 0
+  output.value = ''
+  checks.value = []
+  checksCursor.value = 0
+  gpu.value = undefined
+  liveJob.value = undefined
+  if (fallback.value) {
+    void pollLog()
+    void pollGpu()
+    void startFallbackChecks()
+  } else {
+    live.restart()
+  }
+}
+
+watch(stream, switchStream)
+watch(() => props.id, resetForNewJob)
+
+onMounted(() => {
+  live.connect()
   checksClockTimer = window.setInterval(() => (checksClock.value = Date.now()), 1000)
 })
 
 onUnmounted(() => {
-  window.clearInterval(logTimer)
-  window.clearInterval(gpuTimer)
   window.clearInterval(checksClockTimer)
+  stopFallback()
+  live.close()
   gateway.abort()
-  checksController.abort()
 })
 </script>
 
@@ -220,9 +339,12 @@ onUnmounted(() => {
       <div>
         <p class="ch-eyebrow">PIPELINE RUN · #{{ id }}</p>
         <h1>{{ job.name }}</h1>
-        <p class="ch-subtitle">{{ job.user }} · {{ job.partition }} · {{ job.nodes || 'Waiting for allocation' }}</p>
+        <p class="ch-subtitle">{{ job.user }} · {{ job.partition }} · {{ liveJob?.nodes || job.nodes || 'Waiting for allocation' }}</p>
       </div>
-      <span class="ch-status" :data-state="status">{{ status }}</span>
+      <div class="ch-run-status">
+        <span class="ch-status" :data-state="status">{{ status }}</span>
+        <span class="ch-transport" :data-state="transport.state" :title="live.lastError.value || ''">{{ transport.label }}</span>
+      </div>
     </div>
 
     <div class="ch-metrics">
@@ -235,19 +357,19 @@ onUnmounted(() => {
     </div>
 
     <section class="ch-panel">
-      <header><strong>Pipeline</strong><span>{{ job.steps.length || 1 }} stages · {{ duration(elapsed) }}</span></header>
+      <header><strong>Pipeline</strong><span>{{ stages.length || 1 }} stages · {{ duration(elapsed) }}</span></header>
       <div class="ch-stages">
-        <div v-if="!job.steps.length" class="ch-stage" :data-state="status">
+        <div v-if="!stages.length" class="ch-stage" :data-state="status">
           <i></i><strong>batch</strong><span>{{ status }} · {{ duration(elapsed) }}</span>
         </div>
-        <div v-for="step in job.steps" :key="step.step.id" class="ch-stage" :data-state="stepStatus(step)">
-          <i></i><strong>{{ stepName(step) }}</strong><span>{{ stepStatus(step) }} · {{ duration(step.time.elapsed) }}</span><small>{{ stepPeakMemory(step) }}</small>
+        <div v-for="stage in stages" :key="stage.id" class="ch-stage" :data-state="stage.state">
+          <i></i><strong>{{ stage.name }}</strong><span>{{ stage.state }} · {{ duration(stage.elapsed) }}</span><small>{{ stage.peak }}</small>
         </div>
       </div>
     </section>
 
     <section class="ch-panel ch-checks-panel">
-      <header><strong>Live checks</strong><span class="ch-check-connection" :data-state="checksConnection">{{ checksConnection.toUpperCase() }}</span></header>
+      <header><strong>Live checks</strong><span class="ch-check-connection" :data-state="transport.state">{{ transport.label }}</span></header>
       <div v-if="checkGroups.length" class="ch-check-groups">
         <article v-for="group in checkGroups" :key="`${group.step}-${group.task}`" class="ch-check-group">
           <header><strong>Task {{ group.task }}</strong><span>{{ group.node }} · step {{ group.step }}</span></header>
@@ -275,12 +397,12 @@ onUnmounted(() => {
 
     <section class="ch-panel ch-terminal-panel">
       <header class="ch-terminal-toolbar">
-        <div><span class="ch-window-dots">● ● ●</span><strong>Pipeline output</strong></div>
+        <div><span class="ch-window-dots">● ● ●</span><strong>Pipeline output</strong><span class="ch-terminal-state" :data-state="paused ? 'paused' : transport.state">{{ paused ? 'PAUSED' : transport.state === 'live' ? 'STREAMING' : transport.label }}</span></div>
         <div class="ch-actions">
           <select v-model="stream"><option value="stdout">stdout</option><option value="stderr">stderr</option></select>
           <label><input v-model="follow" type="checkbox" /> Follow</label>
-          <button type="button" @click="paused = !paused">{{ paused ? 'Resume' : 'Pause' }}</button>
-          <button type="button" @click="output = ''; offset = 0">Clear view</button>
+          <button type="button" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</button>
+          <button type="button" @click="clearView">Clear view</button>
         </div>
       </header>
       <div class="ch-log-path">{{ outputPath }}</div>

@@ -44,6 +44,9 @@
   .ch-eyebrow { margin:0; color:var(--ch-yellow); font-size:.68rem; font-weight:700; letter-spacing:.12em; }
   .ch-subtitle { margin:0; color:var(--ch-muted); font-size:.78rem; }
   .ch-status { align-self:flex-start; border:1px solid #484b52; border-radius:999px; padding:.38rem .68rem; font-size:.72rem; font-weight:700; }
+  .ch-run-status { display:flex; flex-direction:column; align-items:flex-end; gap:.4rem; }
+  .ch-transport { color:#f2b75b; font-size:.6rem; font-weight:700; letter-spacing:.1em; }.ch-transport[data-state='live']{color:#68e5b5}.ch-transport[data-state='reconnecting']{color:#ff9a69}.ch-transport[data-state='fallback']{color:#9fa3ac}
+  .ch-terminal-state { margin-left:.7rem; color:#f2b75b; font-size:.6rem; font-weight:700; letter-spacing:.1em; }.ch-terminal-state[data-state='live']{color:#68e5b5}.ch-terminal-state[data-state='paused']{color:#9fa3ac}.ch-terminal-state[data-state='reconnecting']{color:#ff9a69}
   .ch-status[data-state='RUNNING'] { border-color:#7e8429; color:var(--ch-yellow); background:#2b2c18; }
   .ch-status[data-state='COMPLETED'] { border-color:#28745b; color:#6ee7b7; background:#112b23; }
   .ch-status[data-state='FAILED'],.ch-status[data-state='OUT_OF_MEMORY'] { border-color:#8d3340; color:#ff7d8e; background:#35171c; }
@@ -71,7 +74,7 @@
   .ch-gpu progress { width:100%; height:.28rem; margin:.55rem 0; accent-color:var(--ch-yellow); }
   .ch-gpu p { margin:0; flex-wrap:wrap; color:var(--ch-muted); font-size:.63rem; }
   .ch-live { color:#68e5b5; letter-spacing:.1em; }.ch-live.stale{color:#f2b75b}.ch-empty{padding:1rem;color:var(--ch-muted);font-size:.75rem}
-  .ch-check-connection { color:#f2b75b; font-size:.62rem; letter-spacing:.08em; }.ch-check-connection[data-state='live']{color:#68e5b5}.ch-check-connection[data-state='reconnecting']{color:#ff9a69}
+  .ch-check-connection { color:#f2b75b; font-size:.62rem; letter-spacing:.08em; }.ch-check-connection[data-state='live']{color:#68e5b5}.ch-check-connection[data-state='reconnecting']{color:#ff9a69}.ch-check-connection[data-state='fallback']{color:#9fa3ac}
   .ch-check-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(18rem,1fr)); gap:.65rem; padding:.75rem; }
   .ch-check-group { overflow:hidden; border:1px solid var(--ch-line); border-radius:5px; background:#141518; }
   .ch-check-group>header { display:flex; justify-content:space-between; gap:.5rem; padding:.55rem .65rem; border-bottom:1px solid #2c2e33; font-size:.68rem; }.ch-check-group>header span{color:var(--ch-muted)}

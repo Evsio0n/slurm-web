@@ -7,6 +7,7 @@
 import logging
 from functools import wraps
 import asyncio
+import threading
 import urllib.request
 
 import jinja2
@@ -17,6 +18,17 @@ from rfl.core.asyncio import asyncio_run
 
 from ..markdown import render_html
 from ..version import get_version
+from ..live import (
+    CLOSE_NOT_FOUND,
+    CLOSE_UPSTREAM,
+    ConnectionClosed,
+    LiveSessionError,
+    accept_websocket,
+    authenticate_websocket,
+    close_websocket,
+    connect_websocket,
+    finish_websocket,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -303,6 +315,67 @@ def job_check_events(cluster: str, job: int):
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache, no-store", "X-Accel-Buffering": "no"},
     )
+
+
+def job_live(cluster: str, job: int):
+    """Relay the multiplexed job live WebSocket between the browser and the agent.
+
+    The gateway stays as thin as proxy_agent(): it authenticates the browser,
+    opens one upstream WebSocket to the agent with the same bearer token, then
+    forwards frames verbatim in both directions. Cursors, channels and heartbeats
+    are owned by the agent session.
+    """
+    ws = accept_websocket()
+    upstream = None
+    try:
+        token, _ = authenticate_websocket(ws)
+        if cluster not in current_app.agents:
+            raise LiveSessionError(CLOSE_NOT_FOUND, f"cluster {cluster} not found")
+        agent = current_app.agents[cluster]
+        try:
+            upstream = connect_websocket(
+                f"{agent.url}/v{agent.version}/job/{job}/live", token
+            )
+        except Exception as err:
+            logger.warning("Unable to open live session on agent %s: %s", cluster, err)
+            raise LiveSessionError(CLOSE_UPSTREAM, "agent live session unavailable")
+
+        def downstream():
+            # Agent -> browser. Runs in a plain thread so a slow browser never
+            # blocks control frames coming from the other direction.
+            try:
+                while True:
+                    frame = upstream.receive()
+                    if frame is None:
+                        break
+                    ws.send(frame)
+            except (ConnectionClosed, OSError):
+                pass
+            finally:
+                close_websocket(ws, upstream.close_reason or 1000, upstream.close_message)
+
+        pump = threading.Thread(target=downstream, daemon=True, name=f"live-{cluster}-{job}")
+        pump.start()
+        # Browser -> agent on the request thread.
+        while True:
+            frame = ws.receive()
+            if frame is None:
+                break
+            upstream.send(frame)
+    except ConnectionClosed:
+        pass
+    except LiveSessionError as err:
+        return _finish_relay(ws, upstream, err)
+    except Exception as err:  # pragma: no cover - defensive
+        logger.exception("Live relay for %s job %s failed", cluster, job)
+        return _finish_relay(ws, upstream, LiveSessionError(CLOSE_UPSTREAM, str(err)))
+    return _finish_relay(ws, upstream)
+
+
+def _finish_relay(ws, upstream, error=None):
+    if upstream is not None:
+        close_websocket(upstream)
+    return finish_websocket(ws, error)
 
 
 @check_jwt

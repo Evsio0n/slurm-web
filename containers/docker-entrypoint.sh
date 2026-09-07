@@ -45,7 +45,7 @@ run_gunicorn() {
         --bind "$BIND" \
         --workers "${SLURMWEB_WORKERS:-4}" \
         --worker-class "${SLURMWEB_WORKER_CLASS:-gthread}" \
-        --threads "${SLURMWEB_THREADS:-8}" \
+        --threads "${SLURMWEB_THREADS:-32}" \
         --access-logfile - \
         --error-logfile - \
         "$WSGI_MODULE"

@@ -1,8 +1,9 @@
 = Live task checks
 
 Slurm-web can display structured checks emitted independently by every task in a job.
-Checks are delivered to the browser as Server-Sent Events (SSE) and remain available as
-a snapshot after the job finishes.
+Checks, task output, GPU telemetry and job state are delivered to the browser over one
+multiplexed WebSocket per job. A Server-Sent Events (SSE) stream and polling endpoints
+remain available as a fallback, and the snapshot stays available after the job finishes.
 
 == Emit a check
 
@@ -34,7 +35,51 @@ This avoids concurrent append operations from multiple compute nodes. Supported 
 are `queued`, `running`, `passed`, `failed`, `warning`, `skipped` and `cancelled`.
 Running checks without an update for 15 seconds are rendered as `stalled`.
 
-== APIs
+== Live WebSocket
+
+The job workbench opens a single WebSocket:
+
+[source,text]
+----
+ws(s)://<gateway>/api/agents/<cluster>/job/<job>/live
+----
+
+Browsers cannot set the `Authorization` header on a WebSocket, so the first frame
+carries the bearer token instead of putting it in the URL:
+
+[source,json]
+----
+{"type": "auth", "token": "<jwt>"}
+{"type": "subscribe", "channels": ["checks", "log", "gpu", "job"],
+ "checks_cursor": 0, "log": {"stream": "stdout", "offset": 0}}
+----
+
+The gateway validates the token, opens one upstream WebSocket to the agent with the
+same token in the `Authorization` header, and relays frames verbatim in both
+directions. The agent owns the session:
+
+* `checks`: a `checks` snapshot on subscribe, then one `check` frame per new event.
+  Events resume from `checks_cursor` (the event sequence number).
+* `log`: `log` frames carry only new bytes from the requested `offset`. Send
+  `{"type": "log", "stream": "stderr", "offset": 0}` to switch stream and
+  `{"type": "pause"|"resume", "channel": "log"}` to hold the stream without losing
+  the offset.
+* `gpu`: the latest per-GPU telemetry every two seconds, only when it changed.
+  Nothing is buffered, so a slow client never receives a backlog of stale frames.
+* `job`: state, elapsed time, nodes and steps, only when they changed.
+* `heartbeat` every ten seconds of silence; `ping` is answered with `pong`.
+
+Authorization failures close the socket with code `4401`, `4403` or `4404`; protocol
+errors use `4400` and an unreachable agent `4502`. The client reconnects with its
+cursors after network failures and falls back to SSE and polling when the WebSocket
+cannot be established at all.
+
+Every long-lived session occupies one Gunicorn thread in the agent and one in the
+gateway. Container images therefore default to `gthread` workers with 32 threads
+(`SLURMWEB_THREADS`). The data roots can be relocated with `SLURMWEB_CHECKS_ROOT`,
+`SLURMWEB_LOG_ROOTS` (colon separated) and `SLURMWEB_GPU_ROOT`.
+
+== Fallback APIs
 
 The current snapshot is available from:
 
@@ -50,6 +95,5 @@ Incremental updates use a resumable cursor:
 GET /api/agents/<cluster>/job/<job>/checks/events?cursor=<sequence>
 ----
 
-The SSE connection emits `check` events and a heartbeat every ten seconds. Container
-deployments use Gunicorn `gthread` workers so concurrent event streams do not block
-ordinary API requests.
+The SSE connection emits `check` events and a heartbeat every ten seconds. Task output
+and GPU telemetry can also be polled from `/job/<job>/log` and `/job/<job>/gpus`.

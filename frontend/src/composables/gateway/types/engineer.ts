@@ -86,3 +86,38 @@ export interface JobChecksSnapshot {
   generated_at: number
   checks: JobCheckEvent[]
 }
+
+export type JobLiveChannel = 'checks' | 'log' | 'gpu' | 'job'
+
+export interface JobLiveCursors {
+  checks: number
+  log: { stream: 'stdout' | 'stderr'; offset: number }
+}
+
+export interface JobLiveStepSummary {
+  id: string | null
+  name: string | null
+  state: string[]
+  elapsed: number
+}
+
+export interface JobLiveJobSummary {
+  state: string[]
+  elapsed: number
+  nodes: string
+  exit_code: unknown
+  steps: JobLiveStepSummary[]
+  active: boolean
+}
+
+export type JobLiveServerMessage =
+  | { type: 'ready'; job_id: number; channels: JobLiveChannel[] }
+  | ({ type: 'subscribed'; channels: JobLiveChannel[] } & { cursors: Record<string, unknown> })
+  | ({ type: 'checks' } & JobChecksSnapshot)
+  | { type: 'check'; event: JobCheckEvent }
+  | ({ type: 'log'; stream: 'stdout' | 'stderr' } & JobLogChunk)
+  | ({ type: 'gpu' } & JobGpuTelemetry)
+  | ({ type: 'job' } & JobLiveJobSummary)
+  | { type: 'heartbeat'; ts: number; cursor: number }
+  | { type: 'pong'; ts: number }
+  | { type: 'error'; code: number; message: string; transient?: boolean }

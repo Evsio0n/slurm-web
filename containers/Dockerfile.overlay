@@ -3,20 +3,28 @@
 
 FROM ghcr.io/rackslab/slurm-web-agent@sha256:96a8c4762a8924e1c7cfe5a17a556e0085aca6c16e4a3c3e668a0eff27e4a59b AS agent
 USER root
+RUN /opt/slurm-web-venv/bin/pip install --no-cache-dir --disable-pip-version-check "simple-websocket>=1.0"
+COPY slurmweb/live.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/live.py
+COPY slurmweb/views/__init__.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/__init__.py
+COPY slurmweb/apps/__init__.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/__init__.py
 COPY slurmweb/apps/agent.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/agent.py
 COPY slurmweb/views/agent.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/agent.py
 COPY conf/vendor/agent.yml /usr/share/slurm-web/conf/agent.yml
 COPY containers/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
-RUN python -m py_compile /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/agent.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/agent.py
+RUN python -m py_compile /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/live.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/agent.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/agent.py
 USER slurm-web
 
 FROM ghcr.io/rackslab/slurm-web-gateway@sha256:bfe36db2d60b2dd97ad5fbe59845d6b34a0732d06bd46748c6f954681ee27f2a AS gateway
 USER root
+RUN /opt/slurm-web-venv/bin/pip install --no-cache-dir --disable-pip-version-check "simple-websocket>=1.0"
+COPY slurmweb/live.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/live.py
+COPY slurmweb/views/__init__.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/__init__.py
+COPY slurmweb/apps/__init__.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/__init__.py
 COPY slurmweb/apps/gateway.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/gateway.py
 COPY slurmweb/views/gateway.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/gateway.py
 COPY frontend/dist/ /usr/share/slurm-web/frontend/
 COPY containers/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod 755 /usr/local/bin/docker-entrypoint.sh
-RUN python -m py_compile /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/gateway.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/gateway.py
+RUN python -m py_compile /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/live.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/apps/gateway.py /opt/slurm-web-venv/lib/python3.13/site-packages/slurmweb/views/gateway.py
 USER slurm-web
