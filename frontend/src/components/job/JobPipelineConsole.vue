@@ -26,9 +26,11 @@ const logError = ref('')
 const checks = ref<JobCheckEvent[]>([])
 const checksCursor = ref(0)
 const checksConnection = ref<'connecting' | 'live' | 'reconnecting'>('connecting')
+const checksClock = ref(Date.now())
 let checksController = new AbortController()
 let logTimer = -1
 let gpuTimer = -1
+let checksClockTimer = -1
 
 const resources = computed(() => extractSlurmTRESResources(props.job.tres.allocated))
 const allocatedGpu = computed(() => jobAllocatedGPU(props.job))
@@ -81,11 +83,18 @@ function stepPeakMemory(step: SlurmJobStep): string {
 }
 
 function checkIcon(check: JobCheckEvent) {
-  if (check.state === 'passed') return '✓'
-  if (check.state === 'failed' || check.state === 'cancelled') return '×'
-  if (check.state === 'warning' || check.state === 'stalled') return '!'
-  if (check.state === 'skipped') return '–'
+  const state = effectiveCheckState(check)
+  if (state === 'passed') return '✓'
+  if (state === 'failed' || state === 'cancelled') return '×'
+  if (state === 'warning' || state === 'stalled') return '!'
+  if (state === 'skipped') return '–'
   return '●'
+}
+
+function effectiveCheckState(check: JobCheckEvent) {
+  if (check.state !== 'running') return check.state
+  const age = checksClock.value - Date.parse(check.timestamp)
+  return Number.isFinite(age) && age > 15_000 ? 'stalled' : 'running'
 }
 
 function checkProgress(check: JobCheckEvent) {
@@ -193,11 +202,13 @@ onMounted(() => {
   void startChecks()
   logTimer = window.setInterval(pollLog, 1000)
   gpuTimer = window.setInterval(pollGpu, 2000)
+  checksClockTimer = window.setInterval(() => (checksClock.value = Date.now()), 1000)
 })
 
 onUnmounted(() => {
   window.clearInterval(logTimer)
   window.clearInterval(gpuTimer)
+  window.clearInterval(checksClockTimer)
   gateway.abort()
   checksController.abort()
 })
@@ -240,10 +251,10 @@ onUnmounted(() => {
       <div v-if="checkGroups.length" class="ch-check-groups">
         <article v-for="group in checkGroups" :key="`${group.step}-${group.task}`" class="ch-check-group">
           <header><strong>Task {{ group.task }}</strong><span>{{ group.node }} · step {{ group.step }}</span></header>
-          <div v-for="check in group.checks" :key="check.check_id" class="ch-check" :data-state="check.state">
+          <div v-for="check in group.checks" :key="check.check_id" class="ch-check" :data-state="effectiveCheckState(check)">
             <i>{{ checkIcon(check) }}</i>
-            <div><strong>{{ check.title }}</strong><span>{{ check.message || check.state }}</span><progress v-if="checkProgress(check) !== undefined" :value="checkProgress(check)" max="100"></progress></div>
-            <time>{{ check.duration_ms ? duration(check.duration_ms / 1000) : check.progress !== undefined ? `${number(check.progress)}%` : check.state }}</time>
+            <div><strong>{{ check.title }}</strong><span>{{ effectiveCheckState(check) === 'stalled' ? `No heartbeat · ${check.message}` : check.message || effectiveCheckState(check) }}</span><progress v-if="checkProgress(check) !== undefined" :value="checkProgress(check)" max="100"></progress></div>
+            <time>{{ effectiveCheckState(check) === 'stalled' ? 'STALLED' : check.duration_ms ? duration(check.duration_ms / 1000) : check.progress !== undefined ? `${number(check.progress)}%` : effectiveCheckState(check) }}</time>
           </div>
         </article>
       </div>
