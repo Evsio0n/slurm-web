@@ -41,13 +41,18 @@ watch(
     :breadcrumb="[{ title: 'Dashboard' }]"
   >
     <div class="mx-auto max-w-7xl">
+      <div class="mb-6">
+        <p class="ch-page-eyebrow">CLUSTER OVERVIEW</p>
+        <h1 class="text-2xl font-semibold">Production capacity</h1>
+        <p class="mt-1 text-sm text-gray-500">Live scheduler inventory and workload status.</p>
+      </div>
       <ErrorAlert v-if="unable"
         >Unable to retrieve statistics from cluster
         <span class="font-medium">{{ cluster }}</span></ErrorAlert
       >
       <div
         v-else
-        class="grid grid-cols-2 gap-px bg-gray-200 md:grid-cols-3 xl:grid-cols-6 dark:bg-gray-700"
+        class="ch-dashboard-metrics grid grid-cols-2 gap-px bg-gray-200 md:grid-cols-3 xl:grid-cols-6 dark:bg-gray-700"
       >
         <div class="bg-white px-4 py-6 sm:px-6 lg:px-8 dark:bg-gray-900">
           <p class="text-sm leading-6 font-medium text-gray-400 dark:text-gray-200">Nodes</p>
