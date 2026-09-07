@@ -179,6 +179,8 @@
   .ch-jobs-tab[data-active='true'] { color:#fff; background:#202226; border-color:#3c3f45; }
   .ch-jobs-count { margin-left:.75rem; color:#a6a9b2; font-size:.78rem; }.ch-jobs-count b{color:#fff;font-size:1rem}
   .ch-jobs-tools { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; }
+  .ch-jobs-tools button { font-size:.74rem!important; padding:.32rem .6rem!important; }
+  .ch-jobs-tools button.bg-slurmweb { border-color:#7e8429!important; background:#2b2c18!important; color:#faff69!important; }
   .ch-jobs-search { display:inline-flex; align-items:center; gap:.4rem; padding:0 .6rem; border:1px solid #3c3f45; border-radius:6px; background:#0f1012; color:#8b8f98; }
   .ch-jobs-search input { width:16rem; max-width:60vw; border:0; background:transparent; color:#eee; font-size:.8rem; padding:.42rem 0; outline:0; }
   .ch-jobs-search input::placeholder { color:#666a73; }
