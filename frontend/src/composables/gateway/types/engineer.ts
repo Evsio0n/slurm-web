@@ -91,7 +91,8 @@ export type JobLiveChannel = 'checks' | 'log' | 'gpu' | 'job'
 
 export interface JobLiveCursors {
   checks: number
-  log: { stream: 'stdout' | 'stderr'; offset: number }
+  /** Byte offset already received per output stream. */
+  log: Partial<Record<'stdout' | 'stderr', number>>
 }
 
 export interface JobExitSummary {

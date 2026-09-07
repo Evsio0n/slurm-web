@@ -23,6 +23,12 @@ import type { LogStreamTab } from '@/components/job/JobLogViewer.vue'
 
 type Stream = 'stdout' | 'stderr'
 const STREAMS: Stream[] = ['stdout', 'stderr']
+const CHECK_SNIPPET = [
+  'slurm-check section start load-model "Load model"',
+  'slurm-check running load-model --progress 40 --message "shard 12/29"',
+  'slurm-check passed load-model --duration-ms 31042',
+  'slurm-check section end load-model'
+].join('\n')
 const TERMINAL_FAILURE = ['FAILED', 'OUT_OF_MEMORY', 'TIMEOUT', 'NODE_FAIL', 'CANCELLED', 'BOOT_FAIL', 'DEADLINE', 'PREEMPTED']
 
 const props = defineProps<{ cluster: string; id: number; job: SlurmJobDetail }>()
@@ -59,19 +65,11 @@ let gpuTimer = -1
 const live = useJobLiveSocket({
   cluster: props.cluster,
   jobId: () => props.id,
-  cursors: () => ({ checks: checksCursor.value, log: { stream: stream.value, offset: offsets.value[stream.value] } }),
+  /* Both streams are subscribed so the tabs carry counts and switching is instant. */
+  cursors: () => ({ checks: checksCursor.value, log: { stdout: offsets.value.stdout, stderr: offsets.value.stderr } }),
   onMessage: handleLiveMessage,
   onFallback: startFallback
 })
-
-/* Subscribe to both streams so the tabs carry counts and switching is instant. */
-live.subscribe = () =>
-  live.send({
-    type: 'subscribe',
-    channels: ['checks', 'log', 'gpu', 'job'],
-    checks_cursor: checksCursor.value,
-    log: { streams: { stdout: offsets.value.stdout, stderr: offsets.value.stderr } }
-  })
 
 const transport = computed(() => {
   if (fallback.value) return { label: 'SSE · POLLING', state: 'fallback' }
@@ -537,10 +535,7 @@ onUnmounted(() => {
       </div>
       <div v-else class="ch-snippet">
         No structured checks for this job. Emit them from any task with <b>slurm-check</b>; sections fold the log like a CI job:
-        <code>slurm-check section start load-model "Load model"
-slurm-check running load-model --progress 40 --message "shard 12/29"
-slurm-check passed load-model --duration-ms 31042
-slurm-check section end load-model</code>
+        <code>{{ CHECK_SNIPPET }}</code>
       </div>
     </section>
 

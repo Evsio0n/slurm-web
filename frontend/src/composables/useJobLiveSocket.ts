@@ -78,7 +78,7 @@ export function useJobLiveSocket(options: JobLiveSocketOptions) {
       type: 'subscribe',
       channels: options.channels || ['checks', 'log', 'gpu', 'job'],
       checks_cursor: cursors.checks,
-      log: { stream: cursors.log.stream, offset: cursors.log.offset }
+      log: { streams: cursors.log }
     })
   }
 

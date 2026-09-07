@@ -54,7 +54,7 @@ function isValidJobField(key: string): key is JobField {
   return typeof key === 'string' && JobsFields.includes(key as JobField)
 }
 
-const { data, unable, loaded, setCluster } = useClusterDataPoller<SlurmJobDetail>(
+const { data, unable, loaded, setCluster, setParam } = useClusterDataPoller<SlurmJobDetail>(
   cluster,
   'job',
   5000,
@@ -188,6 +188,14 @@ watch(
   () => cluster,
   (new_cluster) => {
     setCluster(new_cluster)
+  }
+)
+
+/* The route component is reused when only the job id changes; repoint the poller. */
+watch(
+  () => id,
+  (new_id) => {
+    setParam(new_id)
   }
 )
 
